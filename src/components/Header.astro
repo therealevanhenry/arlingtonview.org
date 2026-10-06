@@ -1,13 +1,13 @@
 ---
-import Logo from "../assets/logo.svg";
+import Mark from "../assets/logo-small.svg";
 import { isCurrentSection, withBase } from "../lib/paths";
 
 const sections = [
-  { label: "Meetings", route: "/meetings" },
-  { label: "Documents", route: "/documents" },
-  { label: "About", route: "/about" },
-  { label: "Join", route: "/join" },
-  { label: "Resources", route: "/resources" },
+  { label: "Meetings", route: "/meetings/" },
+  { label: "Documents", route: "/documents/" },
+  { label: "About", route: "/about/" },
+  { label: "Join", route: "/join/" },
+  { label: "Resources", route: "/resources/" },
 ];
 
 const { pathname } = Astro.url;
@@ -16,7 +16,7 @@ const { pathname } = Astro.url;
 <header class="site-header">
   <div class="container site-header-inner">
     <a class="brand" href={withBase("/")}>
-      <Logo class="brand-mark" width="42" height="44" aria-hidden="true" />
+      <Mark class="brand-mark" width="42" height="44" aria-hidden="true" />
       <span>
         <span class="brand-name">Arlington View</span>
         <span class="brand-sub">Civic Association</span>

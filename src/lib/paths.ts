@@ -13,9 +13,24 @@ function normalizeBase(base: string): string {
 }
 
 /**
+ * `/about`, `/about/`, and `about` all become `/about/`; the home path stays `/`.
+ * A path whose last segment looks like a file (`/404.html`) gets no trailing slash.
+ */
+function withTrailingSlash(path: string): string {
+  const trimmed = path.replace(/^\/+|\/+$/g, "");
+  if (trimmed === "") return "/";
+  const lastSegment = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  return lastSegment.includes(".") ? `/${trimmed}` : `/${trimmed}/`;
+}
+
+/**
  * Prefix the site base to a root-relative path.
- * `withBase("/meetings")` is `/meetings` under base `/` and
- * `/arlingtonview.org/meetings` under base `/arlingtonview.org/` or `/arlingtonview.org`.
+ * `withBase("/meetings/")` is `/meetings/` under base `/` and
+ * `/arlingtonview.org/meetings/` under base `/arlingtonview.org/` or `/arlingtonview.org`.
+ *
+ * The path is otherwise passed through untouched: this never adds or removes a trailing
+ * slash, so fragments (`/documents/#bylaws`) and files (`/favicon.svg`) are safe. The site
+ * builds with `trailingSlash: "always"`, so callers write page paths with the slash.
  * Root-relative internal paths only; do not pass absolute URLs.
  */
 export function withBase(path: string, base: string = import.meta.env.BASE_URL): string {
@@ -24,20 +39,20 @@ export function withBase(path: string, base: string = import.meta.env.BASE_URL):
 }
 
 /**
- * Remove the site base and any trailing slash from a pathname, so that
- * `/arlingtonview.org/about/history/` and `/about/history` both give `/about/history`.
- * The home page is `/`.
+ * Remove the site base from a pathname and return the trailing-slash form the site links
+ * to: `/arlingtonview.org/about/history`, `/about/history/`, and `/about/history` all give
+ * `/about/history/`. The home page is `/`.
  */
 export function stripBase(pathname: string, base: string = import.meta.env.BASE_URL): string {
   const prefix = normalizeBase(base);
   const underBase = prefix !== "" && (pathname === prefix || pathname.startsWith(`${prefix}/`));
-  const rest = (underBase ? pathname.slice(prefix.length) : pathname).replace(/\/+$/, "");
-  return rest === "" ? "/" : rest;
+  return withTrailingSlash(underBase ? pathname.slice(prefix.length) : pathname);
 }
 
 /**
- * True when `pathname` is the section `route` or a page beneath it
- * (`/about/history` is within `/about`). Used for `aria-current` in the nav.
+ * True when `pathname` is the section `route` or a page beneath it (`/about/history/` is
+ * within `/about/`). Trailing slashes on either argument do not matter. The home route `/`
+ * matches the home page only. Used for `aria-current` in the nav.
  */
 export function isCurrentSection(
   pathname: string,
@@ -45,5 +60,6 @@ export function isCurrentSection(
   base: string = import.meta.env.BASE_URL,
 ): boolean {
   const current = stripBase(pathname, base);
-  return current === route || current.startsWith(`${route}/`);
+  const section = withTrailingSlash(route);
+  return section === "/" ? current === "/" : current.startsWith(section);
 }

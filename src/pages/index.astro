@@ -21,17 +21,17 @@ import { withBase } from "../lib/paths";
         <h3>Next meeting</h3>
         <p class="display">Tuesday, September 29, 2026</p>
         <p>7:00 to 8:30 pm, virtual</p>
-        <p><a class="button" href={withBase("/meetings")}>Add to Google Calendar</a></p>
-        <p><a href={withBase("/meetings")}>Subscribe to calendar</a></p>
+        <p><a class="button" href={withBase("/meetings/")}>Add to Google Calendar</a></p>
+        <p><a href={withBase("/meetings/")}>Subscribe to calendar</a></p>
       </div>
 
       <ul class="entries" role="list">
         <li class="entry stack">
-          <h3 class="entry-title"><a href={withBase("/documents")}>Bylaws</a></h3>
+          <h3 class="entry-title"><a href={withBase("/documents/")}>Bylaws</a></h3>
           <p>How the association is organized and run.</p>
         </li>
         <li class="entry stack">
-          <h3 class="entry-title"><a href={withBase("/meetings")}>Minutes and agendas</a></h3>
+          <h3 class="entry-title"><a href={withBase("/meetings/")}>Minutes and agendas</a></h3>
           <p>What was discussed and decided at each meeting.</p>
         </li>
       </ul>
@@ -47,13 +47,13 @@ import { withBase } from "../lib/paths";
         <tbody>
           <tr>
             <td data-label="Meeting">September 29, 2026</td>
-            <td data-label="Agenda"><a href={withBase("/meetings")}>Agenda</a></td>
+            <td data-label="Agenda"><a href={withBase("/meetings/")}>Agenda</a></td>
             <td data-label="Minutes">Not yet posted</td>
           </tr>
           <tr>
             <td data-label="Meeting">June 30, 2026</td>
-            <td data-label="Agenda"><a href={withBase("/meetings")}>Agenda</a></td>
-            <td data-label="Minutes"><a href={withBase("/meetings")}>Minutes</a></td>
+            <td data-label="Agenda"><a href={withBase("/meetings/")}>Agenda</a></td>
+            <td data-label="Minutes"><a href={withBase("/meetings/")}>Minutes</a></td>
           </tr>
         </tbody>
       </table>

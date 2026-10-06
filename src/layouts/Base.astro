@@ -25,7 +25,10 @@ const { title, description = DEFAULT_DESCRIPTION, lastUpdated } = Astro.props;
 
 const isHome = stripBase(Astro.url.pathname) === "/";
 const pageTitle = isHome ? SITE_NAME : `${title} | ${SITE_NAME}`;
-const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : undefined;
+// Canonical keeps the base (the github.io preview lives under one) and always ends in a slash.
+const canonical = Astro.site
+  ? new URL(withBase(stripBase(Astro.url.pathname)), Astro.site).href
+  : undefined;
 ---
 
 <!doctype html>

@@ -126,7 +126,6 @@ by source order and nothing needs `!important`.
 | `.stack` | vertical rhythm: `> * + *` gets `--stack-gap` (default `--space-4`); margins are otherwise reset to 0 |
 | `.sections` | same, at `--section-gap`, for the top-level sections of a page |
 | `.visually-hidden` | available to screen readers, not drawn |
-| `.soft`, `.small` | secondary text color; `--step--1` size |
 | `.display` | the next-meeting date |
 | `.button` | the one primary action in a block: solid indigo, paper text, Source Sans 600, 2px radius, 44px minimum height. Secondary actions are plain links, never ghost buttons |
 | `.notice` | tint ground, padded (`--space-5`, `--space-6` from 40rem). With `.cornice` it is the next-meeting block |
@@ -151,22 +150,53 @@ Markup conventions:
   has exactly one `h1`.
 - Every internal href and asset URL goes through `withBase()` from `src/lib/paths.ts`. External links
   open in the same tab.
+- The site builds with `trailingSlash: "always"`. Write every internal page path with its trailing slash
+  (`/meetings/`, `/documents/#bylaws`, `/about/history/`); the home path is `/`. `withBase()` passes the
+  path through as written and never adds a slash, so a missing one is a bug at the call site (GitHub
+  Pages would answer it with a redirect). `isCurrentSection()` and the canonical link accept either form.
 - `.table` loses native table semantics in some browsers once it restacks. Tables with more than a
   couple of columns should add `role="table"`, `role="row"`, and `role="cell"` in markup.
 
 ## Logo
 
 Source: `design/logo-source.jpg` (539 x 559, indigo line drawing above the wordmark). No vector original
-was available. If one turns up, replace the traced files with it and delete this section's procedure.
+was available. If one turns up, replace the traced files with it and delete the tracing procedure below.
 
-Files:
+Three assets, by display size:
 
-- `src/assets/logo.svg`: the house only, one path, `fill="currentColor"`, viewBox `0 0 371.8 392.3`
-  (source pixels). Inlined in the header and colored by `color: var(--indigo)`. The wordmark is live text.
-- `src/assets/logo-mono.svg`: identical geometry, `fill="#1B1B1F"`. Footer.
-- `public/favicon.svg`, `public/favicon.ico`: see below.
+| File | Use | Notes |
+|---|---|---|
+| `src/assets/logo-small.svg` | under about 120px tall: the header mark (44px, indigo) and the footer mark (28px, ink) | hand-authored simplification, inlined, colored by `currentColor` |
+| `src/assets/logo.svg` | about 120px tall and up | the full trace, `fill="currentColor"`; not on any page yet, and never inline it into every page (21 KB) |
+| `src/assets/logo-mono.svg` | same sizes as `logo.svg`, where a fixed ink color is needed (e.g. as an `img`) | identical geometry, `fill="#1B1B1F"` |
 
-How `logo.svg` was produced (vtracer 0.6.5, sharp 0.35.5):
+The wordmark is always live text, never part of an image. The favicon is a fourth, still simpler drawing;
+see below.
+
+### The small mark
+
+The full drawing's strokes are about 0.35px wide in a 44px mark, which renders as a pale smudge on a 1x
+display. `logo-small.svg` redraws the same house for small sizes on a 46 x 48 grid (the trace's
+proportions, 0.1224 scale), authored by hand with the trace as an underlay: facade walls, the cornice as a
+top line with seven hanging dentils and a lower line, three arched upper windows flanked by shutters, the
+porch roof, three posts on piers, three lower openings (the middle one behind the centre post, as in the
+drawing), and a railing with balusters on a base.
+
+Rules it follows, for anyone editing it:
+
+- Nothing is thinner than 1.4 units: 1.28 CSS px at 44px tall, 1.4 at 48px. Arch strokes, sills, the
+  centre post, and balusters are 1.5; walls and the cornice lines 1.5; side posts 2; shutters 2.2.
+- Shutters are solid bars. Outlined shutters, as in the drawing, do not fit at this stroke weight: each
+  shutter-window-shutter group is 8.4 units wide with 1.4 between groups.
+- Symmetric about x = 23. Window groups start at x = 9, 18.8, 28.6 and line up between the storeys.
+- Two paths: one filled (`fill="currentColor"`), one stroked for the six arches
+  (`stroke="currentColor"`). 1.3 KB, 0.6 KB gzipped.
+
+Below 28px (the footer size) it starts to close up; use the favicon drawing for anything smaller.
+
+### How `logo.svg` was traced
+
+vtracer 0.6.5, sharp 0.35.5:
 
 1. Prepare the raster with sharp: extract the house at left 70, top 46, width 400, height 412 (this drops
    the wordmark); greyscale; resize to 8x (3200px wide) with the `lanczos3` kernel; `blur(2.4)`;
@@ -180,16 +210,14 @@ How `logo.svg` was produced (vtracer 0.6.5, sharp 0.35.5):
    window arches; shift the bounding box to the origin; round to one decimal; emit one `path`.
 
 The `dilate(3)` step is a deliberate departure from the source: it takes the strokes from about 2.1 to
-about 3.1 source pixels (0.5% to 0.8% of the drawing's height). At source weight the strokes are 0.24px
-wide in a 44px mark. The traced weight still renders light at 44px on a 1x display (about 0.35px
-strokes); it is clean at 2x and above and at 200px.
+about 3.1 source pixels (0.5% to 0.8% of the drawing's height), so the trace holds up from about 120px.
 
-Result: 123 rings, 1,160 vertices, 21.2 KB (7.9 KB gzipped).
+Result: viewBox `0 0 371.8 392.3` (source pixels), 123 rings, 1,160 vertices, 21.2 KB (7.9 KB gzipped).
 
 ## Favicon
 
-The full drawing turns to mush at 32px, so the favicon is a separate hand-authored mark on a 32-unit
-grid: the cornice band, the two facade walls, three arched upper windows, the porch roof, three posts, a
+Even the small mark closes up at 16 to 32px, so the favicon is a separate hand-authored mark on a
+32-unit grid: the cornice band, the two facade walls, three arched upper windows, the porch roof, three posts, a
 railing, and the base, in `#3A3796` on a `#FBFAF7` tile with a 3-unit radius. The tile keeps the mark
 visible on dark tab strips, where bare indigo all but disappears. Edges sit on even coordinates so the
 mark stays sharp at 16px. `favicon.ico` is a single 32 x 32 PNG rendering of the SVG (sharp) in an ICO

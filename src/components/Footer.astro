@@ -1,5 +1,5 @@
 ---
-import logoMono from "../assets/logo-mono.svg";
+import Mark from "../assets/logo-small.svg";
 
 interface Props {
   /** Role address shown as the contact link. Never a personal address. */
@@ -30,7 +30,7 @@ const lastUpdatedText = lastUpdated === undefined ? undefined : formatNewYorkDat
 
 <footer class="site-footer">
   <div class="container site-footer-inner">
-    <img class="site-footer-mark" src={logoMono.src} alt="" width="27" height="28" />
+    <Mark class="site-footer-mark" width="27" height="28" aria-hidden="true" />
     <ul class="site-footer-list" role="list">
       <li><a class="site-footer-link" href={`mailto:${contactEmail}`}>{contactEmail}</a></li>
       <li><a class="site-footer-link" href={SOURCE_URL}>Site source on GitHub</a></li>
