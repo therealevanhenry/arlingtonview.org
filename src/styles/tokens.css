@@ -1,0 +1,70 @@
+/* Design tokens: custom properties and font imports only. See design/README.md. */
+
+/* Self-hosted fonts: latin subset, upright only. No italics are loaded, so never set font-style: italic. */
+@import "@fontsource/eb-garamond/latin-400.css";
+@import "@fontsource/eb-garamond/latin-500.css";
+@import "@fontsource/eb-garamond/latin-600.css";
+@import "@fontsource/source-sans-3/latin-400.css";
+@import "@fontsource/source-sans-3/latin-600.css";
+
+:root {
+  /* Color. Pinned by the spec; do not add hues. */
+  --indigo: #3a3796; /* accent: links, primary button, logo, the cornice */
+  --ink: #1b1b1f; /* body text, headings */
+  --paper: #fbfaf7; /* page background */
+  --tint: #ecebf6; /* next-meeting block and callouts only */
+  --rule: #d9d7cf; /* hairlines, table row rules */
+  --ink-soft: #55545e; /* secondary text */
+
+  /* Type */
+  --font-display: "EB Garamond", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-body: "Source Sans 3", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --step--1: 0.875rem; /* 14 */
+  --step-0: 1.0625rem; /* 17, body */
+  --step-1: 1.3125rem; /* 21 */
+  --step-2: 1.75rem; /* 28 */
+  --step-3: 2.25rem; /* 36 */
+  --step-4: 3rem; /* 48 */
+  --step-display: clamp(2.25rem, 1.5rem + 3.5vw, 3.75rem); /* the next-meeting date only */
+
+  --leading-body: 1.55;
+  --leading-heading: 1.15;
+  --leading-display: 1.05;
+
+  --measure: 70ch;
+
+  /* Space */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+
+  /* Layout */
+  --container: 72rem;
+  --gutter: clamp(16px, 4vw, var(--space-6)); /* 16px at phone width, 2rem from 800px up */
+  --section-gap: var(--space-7); /* between page sections, phones */
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --section-gap: var(--space-8);
+  }
+}
+
+/* Print: black on white, no tint ground. */
+@media print {
+  :root {
+    --indigo: #000;
+    --ink: #000;
+    --ink-soft: #000;
+    --paper: #fff;
+    --tint: #fff;
+    --rule: #000;
+  }
+}

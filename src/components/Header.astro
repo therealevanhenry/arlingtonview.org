@@ -1,0 +1,43 @@
+---
+import Logo from "../assets/logo.svg";
+import { isCurrentSection, withBase } from "../lib/paths";
+
+const sections = [
+  { label: "Meetings", route: "/meetings" },
+  { label: "Documents", route: "/documents" },
+  { label: "About", route: "/about" },
+  { label: "Join", route: "/join" },
+  { label: "Resources", route: "/resources" },
+];
+
+const { pathname } = Astro.url;
+---
+
+<header class="site-header">
+  <div class="container site-header-inner">
+    <a class="brand" href={withBase("/")}>
+      <Logo class="brand-mark" width="42" height="44" aria-hidden="true" />
+      <span>
+        <span class="brand-name">Arlington View</span>
+        <span class="brand-sub">Civic Association</span>
+      </span>
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      <ul class="site-nav-list" role="list">
+        {
+          sections.map(({ label, route }) => (
+            <li>
+              <a
+                class="site-nav-link"
+                href={withBase(route)}
+                aria-current={isCurrentSection(pathname, route) ? "page" : undefined}
+              >
+                {label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </div>
+</header>

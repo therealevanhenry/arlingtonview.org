@@ -1,14 +1,62 @@
 ---
+import Base from "../layouts/Base.astro";
+import { withBase } from "../lib/paths";
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Arlington View Civic Association</title>
-	</head>
-	<body>
-		<h1>Arlington View Civic Association</h1>
-	</body>
-</html>
+<Base title="Home">
+  <div class="sections">
+    <section class="stack measure">
+      <h1>Arlington View Civic Association</h1>
+      <p>
+        The new arlingtonview.org is being built. Meeting dates, minutes, bylaws, and county resources will
+        appear here.
+      </p>
+    </section>
+
+    {/* Design-system specimen for eyeballing. Delete when the home page is built (Task 8). */}
+    <section class="stack" aria-labelledby="specimen">
+      <h2 id="specimen">Design specimen</h2>
+
+      <div class="notice cornice stack">
+        <h3>Next meeting</h3>
+        <p class="display">Tuesday, September 29, 2026</p>
+        <p>7:00 to 8:30 pm, virtual</p>
+        <p><a class="button" href={withBase("/meetings")}>Add to Google Calendar</a></p>
+        <p><a href={withBase("/meetings")}>Subscribe to calendar</a></p>
+      </div>
+
+      <ul class="entries" role="list">
+        <li class="entry stack">
+          <h3 class="entry-title"><a href={withBase("/documents")}>Bylaws</a></h3>
+          <p>How the association is organized and run.</p>
+        </li>
+        <li class="entry stack">
+          <h3 class="entry-title"><a href={withBase("/meetings")}>Minutes and agendas</a></h3>
+          <p>What was discussed and decided at each meeting.</p>
+        </li>
+      </ul>
+
+      <table class="table">
+        <thead>
+          <tr>
+            <th scope="col">Meeting</th>
+            <th scope="col">Agenda</th>
+            <th scope="col">Minutes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-label="Meeting">September 29, 2026</td>
+            <td data-label="Agenda"><a href={withBase("/meetings")}>Agenda</a></td>
+            <td data-label="Minutes">Not yet posted</td>
+          </tr>
+          <tr>
+            <td data-label="Meeting">June 30, 2026</td>
+            <td data-label="Agenda"><a href={withBase("/meetings")}>Agenda</a></td>
+            <td data-label="Minutes"><a href={withBase("/meetings")}>Minutes</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</Base>

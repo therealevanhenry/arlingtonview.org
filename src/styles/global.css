@@ -1,0 +1,470 @@
+/*
+ * Global styles: reset, base elements, utilities, components.
+ * Tokens live in tokens.css; the rationale lives in design/README.md.
+ * Specificity stays flat: one class per selector, with :where() for anything nested.
+ * Phone-first; the one breakpoint is 40rem.
+ */
+
+/* ---------- Reset ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:where(body, h1, h2, h3, h4, p, ul, ol, dl, dd, figure, blockquote, table) {
+  margin: 0;
+}
+
+:where(img, svg) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+:where(button, input, select, textarea) {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---------- Base elements ---------- */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  font-weight: 400;
+  line-height: var(--leading-body);
+  /* Only upright 400/500/600 files are loaded: never fake a bold or an italic. */
+  font-synthesis-weight: none;
+  font-synthesis-style: none;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-variant-numeric: lining-nums;
+  line-height: var(--leading-heading);
+  font-weight: 500;
+}
+
+h1,
+h2 {
+  font-size: var(--step-2);
+}
+
+h3 {
+  font-size: var(--step-1);
+  font-weight: 600;
+}
+
+strong,
+b,
+em {
+  font-weight: 600;
+}
+
+em,
+i,
+cite,
+address,
+dfn {
+  font-style: normal;
+}
+
+a {
+  color: var(--indigo);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 2px; /* the paper gap keeps the ring visible around the indigo .button too */
+}
+
+:where(ul, ol) {
+  padding-inline-start: 1.25em;
+}
+
+:where(ul, ol)[role="list"] {
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------- Utilities ---------- */
+
+.container {
+  width: 100%;
+  max-width: var(--container);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.measure {
+  max-width: var(--measure);
+}
+
+.stack > * + * {
+  margin-block-start: var(--stack-gap, var(--space-4));
+}
+
+.sections > * + * {
+  margin-block-start: var(--section-gap);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.soft {
+  color: var(--ink-soft);
+}
+
+.small {
+  font-size: var(--step--1);
+}
+
+/* The next-meeting date, and nothing else. */
+.display {
+  font-family: var(--font-display);
+  font-size: var(--step-display);
+  font-weight: 400;
+  font-variant-numeric: lining-nums;
+  line-height: var(--leading-display);
+}
+
+/* ---------- Page frame ---------- */
+
+.skip-link {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background-color: var(--paper);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+.site-main {
+  flex: 1 0 auto;
+  padding-block: var(--space-6) var(--section-gap);
+}
+
+/* ---------- Header ---------- */
+
+.site-header {
+  border-block-end: 1px solid var(--rule);
+}
+
+.site-header-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-6);
+  padding-block: var(--space-3);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.brand-mark {
+  flex: none;
+  width: auto;
+  height: 2.75rem; /* 44px */
+  color: var(--indigo);
+}
+
+.brand-name {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(var(--step-1), 1rem + 2vw, var(--step-2));
+  font-weight: 500;
+  font-variant-caps: small-caps;
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+
+.brand-sub {
+  display: block;
+  margin-block-start: var(--space-1);
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+  line-height: 1.2;
+}
+
+.site-nav-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3); /* tight enough that all five fit one row at 360px */
+  font-size: 1rem;
+}
+
+/* Nav is the one place links are not underlined at rest. */
+.site-nav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem; /* 44px tap height */
+  border-block-end: 2px solid transparent;
+  color: var(--ink);
+  text-decoration-line: none;
+}
+
+.site-nav-link:where(:hover, :focus-visible) {
+  text-decoration-line: underline;
+}
+
+.site-nav-link:where([aria-current="page"]) {
+  border-block-end-color: var(--indigo);
+}
+
+/* ---------- Footer ---------- */
+
+.site-footer {
+  border-block-start: 1px solid var(--rule);
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+}
+
+.site-footer-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding-block: var(--space-4);
+}
+
+.site-footer-mark {
+  flex: none;
+  width: auto;
+  height: 1.75rem;
+}
+
+.site-footer-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-5);
+}
+
+.site-footer-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
+/* ---------- Buttons ---------- */
+
+/* One primary action per block. Secondary actions are plain links, not ghost buttons. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: var(--space-3) var(--space-5);
+  border: 0;
+  border-radius: 2px;
+  background-color: var(--indigo);
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration-line: none;
+  cursor: pointer;
+}
+
+.button:hover {
+  text-decoration-line: underline;
+}
+
+/* ---------- Notice, callout, cornice ---------- */
+
+.notice,
+.callout {
+  padding: var(--space-5);
+  background-color: var(--tint);
+}
+
+/*
+ * The one flourish, taken from the house: a 2px rule with a dentil course beneath it
+ * (6px teeth, 5px tall, 12px pitch). Next-meeting block only.
+ */
+.cornice {
+  border-block-start: 2px solid var(--indigo);
+  background-image: linear-gradient(to right, var(--indigo) 6px, transparent 6px);
+  background-size: 12px 5px;
+  background-repeat: repeat-x;
+}
+
+/* ---------- Ruled entry list ---------- */
+
+.entries {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+  gap: var(--space-5) var(--space-6);
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--rule);
+}
+
+.entry-title {
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  font-weight: 600;
+  line-height: var(--leading-heading);
+}
+
+/* ---------- File list ---------- */
+
+.files {
+  padding: 0;
+  list-style: none;
+}
+
+.file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-4);
+  padding-block: var(--space-1);
+}
+
+.file-date {
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- Tables ---------- */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  text-align: start;
+}
+
+.table :where(th, td) {
+  padding: var(--space-3) var(--space-5) var(--space-3) 0;
+  border-block-end: 1px solid var(--rule);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table :where(th) {
+  font-weight: 600;
+}
+
+/* Phones: each row restacks as a block, labelled from td[data-label]. Never a horizontal scroll. */
+@media (max-width: 39.9375rem) {
+  .table,
+  .table :where(tbody, tr, th, td) {
+    display: block;
+  }
+
+  .table :where(thead) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .table :where(tr) {
+    padding-block: var(--space-3);
+    border-block-end: 1px solid var(--rule);
+  }
+
+  .table :where(th, td) {
+    padding: var(--space-1) 0;
+    border: 0;
+  }
+
+  .table :where(td[data-label])::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--ink-soft);
+    font-size: var(--step--1);
+    font-weight: 600;
+  }
+}
+
+/* ---------- Wider than a phone ---------- */
+
+@media (min-width: 40rem) {
+  h1 {
+    font-size: var(--step-3);
+  }
+
+  .site-nav-list {
+    gap: 0 var(--space-5);
+    font-size: inherit;
+  }
+
+  .notice,
+  .callout {
+    padding: var(--space-6);
+  }
+}
+
+/* ---------- Print ---------- */
+
+/* Colors go to black on white through the token overrides in tokens.css. */
+@media print {
+  .skip-link,
+  .site-nav,
+  .site-footer-link {
+    display: none;
+  }
+
+  .notice,
+  .callout {
+    padding-inline: 0;
+    background-color: transparent;
+  }
+
+  .cornice {
+    background-image: none;
+  }
+
+  .button {
+    padding: 0;
+    background-color: transparent;
+    color: inherit;
+    text-decoration-line: underline;
+  }
+}

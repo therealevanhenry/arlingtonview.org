@@ -1,0 +1,46 @@
+---
+import logoMono from "../assets/logo-mono.svg";
+
+interface Props {
+  /** Role address shown as the contact link. Never a personal address. */
+  contactEmail: string;
+  /** ISO timestamp of the newest content. Omit it and no "Last updated" line renders. */
+  lastUpdated?: string;
+}
+
+const SOURCE_URL = "https://github.com/therealevanhenry/arlingtonview.org";
+
+const { contactEmail, lastUpdated } = Astro.props;
+
+function formatNewYorkDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Footer: lastUpdated is not a valid ISO timestamp: "${iso}"`);
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(date);
+}
+
+const lastUpdatedText = lastUpdated === undefined ? undefined : formatNewYorkDate(lastUpdated);
+---
+
+<footer class="site-footer">
+  <div class="container site-footer-inner">
+    <img class="site-footer-mark" src={logoMono.src} alt="" width="27" height="28" />
+    <ul class="site-footer-list" role="list">
+      <li><a class="site-footer-link" href={`mailto:${contactEmail}`}>{contactEmail}</a></li>
+      <li><a class="site-footer-link" href={SOURCE_URL}>Site source on GitHub</a></li>
+      {
+        lastUpdatedText !== undefined && (
+          <li>
+            Last updated <time datetime={lastUpdated}>{lastUpdatedText}</time>
+          </li>
+        )
+      }
+    </ul>
+  </div>
+</footer>
