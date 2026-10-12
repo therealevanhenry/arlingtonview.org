@@ -18,30 +18,31 @@ const mailto = `mailto:${settings.contactEmail}`;
 const agenda = agendaUrl ?? meeting?.agendaUrl;
 ---
 
-{/* The home hero: a posted meeting notice. Left, the date lockup (or the standing rule); right, the details. */}
+{/*
+  The home hero: a posted meeting notice in two zones. First, when and where (the date lockup with the
+  time and place under it, or the standing rule); second, how to attend (the note, the agenda, the actions).
+*/}
 <section class="notice notice-hero cornice" aria-labelledby="next-meeting">
   <h2 class="notice-heading" id="next-meeting">Next meeting</h2>
   {
     meeting ? (
-      <p class="notice-date">
-        <time datetime={meeting.start.toISOString()}>
-          <span class="notice-weekday">{formatMeetingWeekday(meeting.start)}</span>{" "}
-          <span class="notice-monthday">{formatMeetingMonthDay(meeting.start)}</span>
-        </time>
-      </p>
+      <div class="notice-when">
+        <p class="notice-date">
+          <time datetime={meeting.start.toISOString()}>
+            <span class="notice-weekday">{formatMeetingWeekday(meeting.start)}</span>{" "}
+            <span class="notice-monthday">{formatMeetingMonthDay(meeting.start)}</span>
+          </time>
+        </p>
+        <div class="notice-meta">
+          <p class="notice-time">{formatMeetingTime(meeting.start, meeting.end)}</p>
+          <p>{meeting.isVirtual ? "Virtual meeting" : meeting.location}</p>
+        </div>
+      </div>
     ) : (
       <p class="notice-rule">{settings.meetingRule}</p>
     )
   }
   <div class="notice-details stack">
-    {
-      meeting && (
-        <div class="notice-meta">
-          <p class="notice-time">{formatMeetingTime(meeting.start, meeting.end)}</p>
-          <p>{meeting.isVirtual ? "Virtual meeting" : meeting.location}</p>
-        </div>
-      )
-    }
     {
       (meeting === undefined || meeting.isVirtual || agenda !== undefined) && (
         <div class="notice-meta">

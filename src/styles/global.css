@@ -383,8 +383,10 @@ a:hover {
 
 /*
  * The next-meeting block as a notice posted on the wall of the house: the tint is the wall, the
- * cornice projects past it, and the date is a lockup the type carries. One column on phones; from
- * 56rem the lockup sits left and the details right, behind a rule (see the end of this file).
+ * cornice projects past it, and the date is a lockup the type carries. Two zones, split by meaning:
+ * when and where (.notice-when: the lockup, then the time and place), and how to attend
+ * (.notice-details: the note, the agenda, the actions). One column on phones; from 56rem the zones
+ * sit side by side with a rule between them (see the end of this file).
  */
 .notice-hero {
   display: grid;
@@ -414,10 +416,11 @@ a:hover {
 /*
  * One line, always, at --step-hero unless the cap below applies. The two negative margins are
  * optical: one closes the lockup up under the weekday, the other pulls the round and loose-fitting
- * capitals (O, S) out toward the left edge the weekday sets.
+ * capitals (O, S) out toward the left edge the weekday sets. The margin beneath keeps the time
+ * tight to the lockup: --space-3 on phones, growing with the type so descenders (p, y, g) clear it.
  */
 .notice-monthday {
-  margin-block-start: -0.05em;
+  margin-block: -0.05em max(var(--space-3), 0.2em);
   margin-inline-start: -0.02em;
   font-size: var(--step-hero);
   font-weight: 400;
@@ -459,7 +462,7 @@ a:hover {
   margin-block-start: var(--space-5);
 }
 
-/* Same size and leading as the weekday, so in two columns their first baselines are level. */
+/* The time of day, directly under the lockup: the weekday's size, at regular weight. */
 .notice-time {
   font-family: var(--font-display);
   font-size: var(--step-2);
@@ -633,18 +636,31 @@ a:hover {
     --notice-pad: var(--space-7);
     grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 1fr);
     column-gap: var(--space-7);
-    align-items: start;
   }
 
   .notice-heading {
     grid-column: 1 / -1;
   }
 
-  /* The rule is as tall as the details, and starts level with the top of the weekday line. */
+  /*
+   * The rule runs the full height of the two zones. Where the right zone is the shorter one, its
+   * content rests at the bottom, on the base the place line sets.
+   */
   .notice-details {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
     margin-block-start: 0;
     padding-inline-start: var(--space-6);
     border-inline-start: 1px solid var(--indigo);
+  }
+
+  /*
+   * The last row of actions is 44px tall with its text centered; the place line beside it is one
+   * body line. Let the row hang below the zone by half the difference so the two share a baseline.
+   */
+  .notice-details > :where(.actions) {
+    margin-block-end: calc((var(--leading-body) * 1em - 2.75rem) / 2);
   }
 }
 

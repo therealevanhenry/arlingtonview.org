@@ -119,6 +119,66 @@ describe("NextMeeting", () => {
     expect(html.indexOf("</time>")).toBeLessThan(html.indexOf("7:00 to 8:30 pm"));
   });
 
+  it("splits the notice by meaning: when and where, then how to attend", async () => {
+    const html = await container.renderToString(NextMeeting, { props: { meeting: sample, settings } });
+    const when = html.indexOf('class="notice-when"');
+    const details = html.indexOf('class="notice-details');
+    expect(when).toBeGreaterThan(-1);
+    expect(details).toBeGreaterThan(when);
+    const left = html.slice(when, details);
+    const right = html.slice(details);
+    // When and where: the lockup, then the time of day and the place.
+    expect(left).toContain("</time>");
+    expect(left).toMatch(/<p class="notice-time">7:00 to 8:30 pm<\/p>\s*<p>Virtual meeting<\/p>/);
+    expect(left).not.toContain(settings.virtualLinkNote);
+    expect(left).not.toContain("Agenda");
+    expect(left).not.toContain('class="actions"');
+    expect(left).not.toContain("href=");
+    // How to attend: the note with the contact link, the agenda, the actions.
+    expect(right).toContain(settings.virtualLinkNote);
+    expect(right).toContain(`mailto:${settings.contactEmail}`);
+    expect(right).toContain(">Agenda</a>");
+    expect(right).toContain('class="actions"');
+    expect(right).not.toContain("7:00 to 8:30 pm");
+    expect(right).not.toContain("Virtual meeting");
+    expect(right).not.toContain("<time");
+    // One reading order, which is also the one-column order on phones.
+    const order = ["</time>", "7:00 to 8:30 pm", "Virtual meeting", settings.virtualLinkNote, ">Agenda</a>", 'class="actions"'].map(
+      (needle) => html.indexOf(needle),
+    );
+    expect(order.every((at) => at > -1)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("leaves only the actions row on the right for an in-person meeting with no agenda", async () => {
+    const { agendaUrl: _omit, ...bare } = sample;
+    const meeting: Meeting = { ...bare, isVirtual: false, location: "Arlington View Community Center" };
+    const html = await container.renderToString(NextMeeting, { props: { meeting, settings } });
+    const details = html.indexOf('class="notice-details');
+    const left = html.slice(html.indexOf('class="notice-when"'), details);
+    const right = html.slice(details);
+    expect(left).toMatch(/<p class="notice-time">7:00 to 8:30 pm<\/p>\s*<p>Arlington View Community Center<\/p>/);
+    expect(right).toMatch(/^class="notice-details[^"]*">\s*<div class="actions">/);
+    expect(right).not.toContain("notice-meta");
+    expect(right).not.toContain("mailto:");
+    expect(right).toContain("Add to Google Calendar");
+  });
+
+  it("keeps the fallback in the same two zones: the rule, then the note and subscribe links", async () => {
+    const html = await container.renderToString(NextMeeting, { props: { meeting: undefined, settings } });
+    const details = html.indexOf('class="notice-details');
+    const left = html.slice(0, details);
+    const right = html.slice(details);
+    expect(left).toContain(settings.meetingRule);
+    expect(left).not.toContain("notice-when");
+    expect(left).not.toContain("notice-time");
+    expect(left).not.toContain("href=");
+    expect(right).toContain(settings.virtualLinkNote);
+    expect(right).toContain(`mailto:${settings.contactEmail}`);
+    expect(right).toContain("Subscribe to calendar");
+    expect(right).not.toContain(settings.meetingRule);
+  });
+
   it("is the same hero notice, under the cornice, in both states", async () => {
     const withMeeting = await container.renderToString(NextMeeting, { props: { meeting: sample, settings } });
     const fallback = await container.renderToString(NextMeeting, { props: { meeting: undefined, settings } });

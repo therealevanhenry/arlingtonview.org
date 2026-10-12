@@ -168,20 +168,32 @@ a lockup the type carries. It is the one bold thing on the page; everything arou
 - Two optical corrections on the month and day: `margin-block-start: -0.05em` closes the lockup up under
   the weekday, and `margin-inline-start: -0.02em` brings the round capitals (O, S) out to the left edge
   the weekday sets.
-- Details (`.notice-details`, a `.stack`): the time (`.notice-time`, Garamond 400 at `--step-2`, the same
-  size and leading as the weekday), the place at body size, the virtual-link note with the contact link
-  (`.notice-note`, 34ch), the agenda link when there is one, and the `.actions` row.
-- Layout: one column under 56rem, the details following the lockup after `--space-5`, with no dividing
-  rule. From 56rem, two columns, `minmax(0, 1.6fr)` and `minmax(18rem, 1fr)`, with a `--space-7` gap; the
-  details column carries a 1px `--indigo` rule on its left edge and `--space-6` of padding. The heading
-  spans both columns, so the details start level with the weekday and the first baseline of the time sits
-  on the weekday's. The rule is as tall as the details, not the block.
+- Two zones, split by meaning. The first is when and where (`.notice-when`): the lockup, then directly
+  beneath it the time (`.notice-time`, Garamond 400 at `--step-2`, lining figures) and the place at body
+  size (`Virtual meeting` or the location). The time and place are the continuation of the lockup, not a
+  separate block: the gap under the month and day is `max(var(--space-3), 0.2em)`, which is `--space-3` on
+  phones and grows with the type so the descenders of p, y, and g clear the time. The second zone is how
+  to attend and what to do (`.notice-details`, a `.stack`): the virtual-link note with the contact link
+  (`.notice-note`, 34ch), the agenda link when there is one, and the `.actions` row. An in-person meeting
+  with no agenda leaves only the actions row there.
+- Layout: one column under 56rem, in reading order (heading, lockup, time, place, note, agenda, actions),
+  the second zone following the first after `--space-5`, with no dividing rule. From 56rem, two columns,
+  `minmax(0, 1.6fr)` and `minmax(18rem, 1fr)`, with a `--space-7` gap. The heading spans both. 1.6fr is the
+  smallest share that still lets the date reach its cap at the full container width: the widest date at
+  111px needs 574px, and the column is 581px.
+- The second zone carries a 1px `--indigo` rule on its left edge and `--space-6` of padding. The rule runs
+  the full height of the two zones. Where the second zone is the shorter one its content rests at the
+  bottom, and the last row of actions (44px tall, text centered) hangs below the zone by half the
+  difference between its height and a body line, so its text shares a baseline with the place line. Where
+  the second zone is the taller one (the two-column layout under about 69rem, or with an agenda link) it
+  starts level with the weekday and the first zone keeps its place at the top.
 - Padding (`--notice-pad`): `--space-5` on phones, `--space-6` from 40rem, `--space-7` from 56rem, plus
   `--cornice-height` at the top.
-- Fallback (no upcoming meeting, or the calendar could not be read): the same notice and grid. In place of
-  the lockup, the standing meeting rule as a Garamond 400 lead at `--step-2`, at most 22em wide
-  (`.notice-rule`). The details hold the note with the contact link and the two subscribe links. The note's
-  capitals top-align with the rule's first line.
+- Fallback (no upcoming meeting, or the calendar could not be read): the same notice, zones, and grid. The
+  first zone is the standing meeting rule as a Garamond 400 lead at `--step-2`, at most 22em wide
+  (`.notice-rule`), in place of the lockup. The second holds the note with the contact link and the two
+  subscribe links; it is the taller zone, so it starts at the top and the note's capitals top-align with
+  the rule's first line.
 - Nothing in the notice depends on the build time, and nothing from a meeting is printed beyond date,
   time, place, and the agenda link.
 
@@ -204,7 +216,7 @@ by source order and nothing needs `!important`.
 | `.callout` | same ground and padding, no cornice, no accent bar |
 | `.cornice` | see "The cornice"; home meeting notice only |
 | `.notice-hero` | modifier on `.notice.cornice` for the home hero: the grid, the wider padding, and the top padding that clears the cornice. See "The meeting notice" |
-| `.notice-heading`, `.notice-date`, `.notice-weekday`, `.notice-monthday`, `.notice-rule`, `.notice-details`, `.notice-time`, `.notice-note` | the parts of the meeting notice; not for use elsewhere |
+| `.notice-heading`, `.notice-when`, `.notice-date`, `.notice-weekday`, `.notice-monthday`, `.notice-time`, `.notice-rule`, `.notice-details`, `.notice-note` | the parts of the meeting notice; not for use elsewhere. `.notice-when` is a grouping hook with no rule of its own |
 | `.lead` | an opening paragraph: Garamond 400, `clamp(1.3125rem, 1.1rem + 0.9vw, 1.5rem)`, line height 1.35, `--ink`, at most 44rem wide. One per page, directly under the hero or the `h1`; it tops out a step below the notice's weekday and time so it does not compete with them |
 | `.entries` / `.entry` / `.entry-title` | ruled entry list: auto-fit grid (min `min(14rem, 100%)`), each entry a 1px top rule, a Garamond heading link, one line of body text. Auto-fit can strand one entry on a last row; for a set of four use `.entries-four` |
 | `.entries-four` | modifier on `.entries` for sets of exactly four: 1 column, 2 x 2 from 36rem, 4 across from 64rem (`min-width` queries). Columns are 249px wide at the 36rem switch and 216px at the 64rem switch (gutters and 2rem gap included), so none is under 12rem. Use it instead of auto-fit, which always has a width band that lands 3 + 1 |
