@@ -14,11 +14,11 @@ The website of the Arlington View Civic Association (AVCA), a neighborhood assoc
 
 This is a static website: pages are built ahead of time and served by GitHub Pages, with no JavaScript running in the visitor's browser. The site rebuilds itself automatically. Its meeting dates come from the AVCA meeting calendar (a public Google Calendar), and its documents come from the association's public Google Drive folders.
 
-Board members keep the calendar and the Drive folders up to date, and the site follows. The only things edited in this repository are the board roster, a few settings, and the resource links, all in plain text files under `src/content/`.
+Board members keep the calendar and the Drive folders up to date, and the site follows. The only things edited in this repository are the board roster, a few settings, the resource links, and the text of the About, History, and Join pages, all in plain text files under `src/content/`.
 
 ## 2. For board members
 
-You do not need a terminal for any of this. Calendar and Drive changes are made in Google. The three text files are edited in GitHub's web editor (see "Edit a content file" below).
+You do not need a terminal for any of this. Calendar and Drive changes are made in Google. The text files under `src/content/` are edited in GitHub's web editor (see "Edit a content file" below).
 
 ### Change or add a meeting
 
@@ -31,7 +31,7 @@ What the site does with calendar events:
 - Moved, cancelled, and one-off meetings are picked up. A cancelled meeting disappears from the site.
 - An all-day event is ignored. A meeting needs a start time.
 - An event with no end time is shown as 90 minutes long.
-- An in-person meeting needs a location in the event. An event with no location is shown as a virtual meeting, and so is an event whose location contains a web link (the link is dropped and not shown).
+- An in-person meeting needs a location in the event. An event with no location is shown as a virtual meeting, and so is an event whose location contains a web link (the link is dropped and not shown) or contains the whole word virtual, zoom, meet, or online. So "Meet in the lobby" would be shown as virtual; write an in-person location without those words, e.g. "Arlington Hall, 2nd floor".
 - Times are shown in Eastern time.
 - Events from two years back to one year ahead are read.
 
@@ -74,14 +74,14 @@ Put only one date in a name. If a name has several, the YYYY-MM-DD form wins ove
 - Minutes appear on the row of the meeting they record. The row is chosen from the date in the file name, wherever the file sits in Drive. For example, June minutes filed in the September folder still appear on the June meeting.
 - Minutes with no date in the name are never dated from their folder. They appear on the Documents page only.
 - A name with only a month (for example `2026 Sep mtg mins`) is matched to that month's meeting when there is exactly one meeting or dated agenda or minutes file in that month. If the month has none, an agenda or minutes file with a month-only date creates its own row for that month. If the month has two or more, the file is not attached to any row and appears on the Documents page only.
-- "(month)" beside a date in the past-meetings table means the date is approximate: the file name gave only a month.
+- "(month)" beside a date in the past-meetings table means the date is approximate: the file name gave only a month. An undated agenda in a month folder, in a month with no meeting, also creates its own "(month)" row.
 - An agenda or other material with no date in its name takes the month of its folder (the `YY MM Month` folder name) and is matched by the same month rule. Minutes do not.
 - If a meeting has two agendas or two sets of minutes, the one that is not a draft is shown, otherwise the most recently changed one. The other moves to the Materials column.
 - Other files in the Minutes & Agendas folder, and dated files in the Presentations folder, appear in the Materials column of the meeting they match by the same rules.
 
 ### Drafts and retired files
 
-- A name containing `(draft)` is shown and labeled "draft" (for example "Minutes (draft)" in the past-meetings table).
+- Draft minutes are labeled: a minutes file whose name contains `(draft)` appears in the past-meetings table as "Minutes (draft)". A draft agenda is not labeled; it shows as a plain "Agenda" link, and only loses its place to a non-draft agenda for the same meeting (which then takes the Agenda slot, with the draft moving to Materials).
 - A name starting with `(OLD)` is hidden everywhere on the site. Use it to retire a file without deleting it. Case and leading spaces do not matter. `(OLD)` in the middle of a name does nothing.
 
 ### Presentations, letters, the neighborhood plan, and bylaws
@@ -113,7 +113,7 @@ Everything in these Drive folders is public. Anyone with the link can open it, a
 
 ### Edit a content file
 
-The three content files are plain text. To edit one:
+The content files are plain text. To edit one:
 
 1. Open the repository on GitHub and go to the file, e.g. `src/content/board.yaml`.
 2. Click the pencil icon ("Edit this file").
@@ -122,6 +122,10 @@ The three content files are plain text. To edit one:
 5. A rebuild starts by itself. Follow it under the Actions tab (see section 3).
 
 A valid edit to these files goes live with the next deploy (a change committed to `main` starts one). An invalid edit (a misspelled key, a bad value) fails the deploy, leaves the site as it was, and the error message names the file and the field.
+
+### Edit page text
+
+The text of the About, History, and Join pages is in `src/content/pages/about.md`, `history.md`, and `join.md`. Follow "Edit a content file" above with one of those files. Keep the three lines at the top (`---`, `title: ...`, `---`) as they are; below them, paragraphs are separated by a blank line, and a heading is a line starting with `## `. Do not type email addresses into page text: the contact address comes from `contactEmail` in `settings.yaml`, and the deploy fails if any other address, or any gmail.com address, appears on a page.
 
 ### Change the board or block captains
 
@@ -157,7 +161,7 @@ Edit `src/content/settings.yaml`. The keys you might change:
 |---|---|
 | `meetingRule` | The standing sentence on the Meetings page (e.g. "Meetings are held on the last Tuesday of the month ..."). The home page shows it in place of a date when no upcoming meeting is found. |
 | `virtualLinkNote` | The note about how members get the virtual meeting link. Shown with the contact email on the Meetings page and in the home page's meeting notice when the meeting is virtual. |
-| `contactEmail` | The role address shown in the footer and on the home, Meetings, About, and Join pages. The Join page text in `src/content/pages/join.md` also contains the address as typed text, so edit it there too. |
+| `contactEmail` | The role address. It is shown in the footer of every page; beside the virtual-link note on the home page (when there is no meeting or the meeting is virtual) and on the Meetings page; on the About page while any block captain position is vacant; and on the Join page. It must be a valid email address, and the only one the site may print. |
 | `joinFormUrl` | Link to a membership form. A blank value (`""`) means the Join page asks people to email the president. A non-blank value must start with `https://`. |
 | `drive.bylawsCurrentFileId` | The file ID of the current bylaws PDF (see above). |
 
@@ -183,7 +187,7 @@ The site is rebuilt by a GitHub workflow named "Deploy". Each rebuild reads the 
 - **Drive changes** (a new agenda, new minutes) appear at the next daily rebuild, or when someone starts one by hand.
 - **"Next meeting"** on the home page changes to the following meeting at the first rebuild after a meeting ends, normally the next morning. The same is true of the past-meetings table.
 
-Each run runs the tests, builds the site with live data, checks the finished pages (for example that no video-meeting link and no stray email address leaked into them), and compares the result with the live site. If nothing changed, it skips the deploy (the run still shows green, with the deploy job skipped). If something changed and the build is healthy, it publishes.
+Each run runs the tests, builds the site with live data, checks the finished pages (for example that no video-meeting link and no email address other than the contact address leaked into them), and compares the result with the live site. If nothing changed, it skips the deploy (the run still shows green, with the deploy job skipped). If something changed and the build is healthy, it publishes.
 
 ### Start a rebuild by hand
 
@@ -243,8 +247,8 @@ To pause the site's automatic updates, disabling the Deploy workflow in GitHub i
 | `npm run astro -- <args>` | The Astro command line, e.g. `npm run astro -- sync`. |
 | `npm run check` | `astro check`, the TypeScript and Astro type check. Expect 0 errors, 0 warnings, 0 hints. |
 | `npm test` | Unit tests (Vitest). They need no build and use fake responses in place of Google. `tests/build.test.ts` is not part of this run. |
-| `npm run test:content-edits` | Guards the board-member workflow: applies valid edits to the content files one at a time (and all together) and requires `npm test` and the build checks to pass, then applies invalid edits and requires a failure that names the file and field. Needs a clean working tree and restores the files itself; CI runs it. |
-| `npm run test:build` | Builds, then runs the assertions on `dist/` (`tests/build.test.ts`): no script tags, one `h1` per page, no video-meeting link, no stray email address, internal links resolve, and more. CI runs it with `OFFLINE=1`. |
+| `npm run test:content-edits` | Guards the board-member workflow: applies valid edits to the content files one at a time (and all together) and requires `npm test` and the build checks to pass, then applies invalid edits and requires a failure that names the file and field. Needs `python3` and a clean working tree (it refuses to run otherwise), restores the content files itself, and leaves `dist/` built from edited content, so run `npm run build` afterwards. CI runs it. |
+| `npm run test:build` | Builds, then runs the assertions on `dist/` (`tests/build.test.ts`): no script tags, one `h1` per page, no video-meeting link, no email address other than `contactEmail` (and no gmail.com), internal links resolve, and more. CI runs it with `OFFLINE=1`. |
 | `npm run test:dist` | The same assertions against an existing `dist/` without building. The Deploy workflow uses it after its real build. |
 | `npm run preview:fixtures` | Writes populated sample pages into `dist/_preview/` (needs an existing build). They are never deployed: `npm run build` wipes them, and the build assertions fail if they exist. |
 | `npm run test:browsers` | `OFFLINE=1` build, fixture previews, then Playwright with WebKit (desktop Safari and iPhone). The local default for browser checks. |

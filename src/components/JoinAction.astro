@@ -14,11 +14,12 @@ const mailto = `mailto:${contactEmail}`;
   formUrl === "" ? (
     <p class="actions">
       <a class="button" href={mailto}>Email the president</a>
+      <a href={mailto}>{contactEmail}</a>
     </p>
   ) : (
     <p class="actions">
       <a class="button" href={formUrl}>Open the membership form</a>
-      <a href={mailto}>Email the president</a>
+      <a href={mailto}>{contactEmail}</a>
     </p>
   )
 }

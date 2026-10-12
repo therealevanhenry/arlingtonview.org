@@ -22,18 +22,12 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 const DIST = resolve(process.cwd(), "dist");
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
+const EMAIL = /[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
 
-/**
- * The addresses the owner has chosen to publish: `contactEmail` in settings.yaml, plus any address
- * written into the Markdown page text. Read at test time, so editing either never fails this test;
- * anything else in the output (and any gmail.com address at all) does.
- */
-function publishedAddresses(): Set<string> {
+/** The one address the site may print: `contactEmail` in settings.yaml, read at test time. */
+function contactAddress(): string {
   const { contactEmail } = parse(readFileSync(resolve("src/content/settings.yaml"), "utf8")) as { contactEmail: string };
-  const pages = resolve("src/content/pages");
-  const prose = readdirSync(pages).map((f) => readFileSync(join(pages, f), "utf8")).join("\n");
-  return new Set([contactEmail, ...(prose.match(EMAIL) ?? [])].map((e) => e.toLowerCase()));
+  return contactEmail.toLowerCase();
 }
 const EXPECTED_PAGES = [
   "index.html",
@@ -121,12 +115,13 @@ describe("build output (dist/)", () => {
     expect(offenders((h) => h.match(pattern) ?? [])).toEqual([]);
   });
 
-  it("5. no gmail.com and no email address other than the configured contact address", () => {
-    const allowed = publishedAddresses();
-    const bad = offenders((h) => {
-      const hits = h.match(/gmail\.com/gi) ?? [];
-      const emails = h.match(EMAIL) ?? [];
-      return [...hits, ...emails.filter((e) => !allowed.has(e.toLowerCase()))];
+  it("5. no gmail.com, and no email address other than settings.contactEmail", () => {
+    // Page text must not type an address: the configured one is the only source (see JoinAction).
+    const allowed = contactAddress();
+    const bad = pages().flatMap(({ name, html }) => {
+      const hits = (html.match(/gmail\.com/gi) ?? []).map((h) => `${name}: ${h}`);
+      const emails = (html.replace(/&#39;|&#x27;/g, "'").match(EMAIL) ?? []).filter((e) => e.toLowerCase() !== allowed).map((e) => `${name}: ${e}`);
+      return [...hits, ...emails];
     });
     expect(bad).toEqual([]);
   });

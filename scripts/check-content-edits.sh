@@ -13,7 +13,9 @@
 # content edit becomes possible.
 #
 # Refuses to run on a dirty working tree. Content files are restored from git on any exit (trap),
-# including an interrupt. Needs python3 and git.
+# including an interrupt, and verified after every restore. Every edit must change its file, or the
+# script stops. An invalid edit counts only if ONE output line names both the file and the field.
+# Needs python3 and git. Leaves dist/ built from edited content (rebuild afterwards).
 set -uo pipefail
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -25,10 +27,26 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 work=$(mktemp -d)
-restore() { git checkout -q HEAD -- src/content 2>/dev/null; git clean -fdq -- src/content 2>/dev/null; }
-cleanup() { restore; rm -rf -- "$work"; }
+# Restores src/content from git and VERIFIES it: no diff and no untracked file may remain. A restore that
+# did not work (e.g. a held index.lock) would leave edited content under every later case, so it is fatal.
+restore() {
+  git checkout -q HEAD -- src/content && git clean -fdq -- src/content
+  if ! git diff --quiet -- src/content || [ -n "$(git ls-files --others -- src/content)" ]; then
+    echo "check-content-edits: FATAL: could not restore src/content to HEAD; it still holds edited content. Run: git checkout HEAD -- src/content && git clean -fd src/content" >&2
+    return 1
+  fi
+}
+cleanup() {
+  local rc=$?
+  restore || rc=3
+  rm -rf -- "$work"
+  exit "$rc"
+}
+fatal() { echo "check-content-edits: FATAL: $*" >&2; exit 3; }
 trap cleanup EXIT
-trap 'exit 130' INT TERM
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 cat > "$work/edits.py" <<'PY'
 import re, sys, pathlib
@@ -47,10 +65,21 @@ def first_body_paragraph(s):
 def first_heading(s):
     return sub1(s, r"^## .*$", "## A renamed heading")
 
+def delete_heading(s):
+    return sub1(s, r"^## .*\n\n?", "")
+
+def insert_paragraph(s):
+    # before the first heading; a page that has lost its headings gets it appended
+    if re.search(r"^## ", s, re.M):
+        return sub1(s, r"^## ", "An inserted paragraph, before the first heading.\n\n## ")
+    return s.rstrip("\n") + "\n\nAn inserted paragraph, before the first heading.\n"
+
 def md(name):
     return (f"pages/{name}.md", {
         f"{name}.md: edit a sentence": first_body_paragraph,
         f"{name}.md: edit a heading": first_heading,
+        f"{name}.md: delete a heading": delete_heading,
+        f"{name}.md: add a paragraph before the first heading": insert_paragraph,
     })
 
 def fill_vacant(s):
@@ -82,6 +111,29 @@ def _vacant(s):
                 lines[i] = re.sub(r"(name: )[^,}]+(,)", r"\g<1>Vacant\g<2>", l, count=1); return "\n".join(lines)
     raise SystemExit("edit not applicable: fewer than two officers")
 
+def no_note(s):
+    if re.search(r"^        note: ", s, re.M):
+        return sub1(s, r"^        note: .*\n", "")
+    return s.rstrip("\n") + "\n      - label: A link without a note\n        url: https://example.org/plain\n"
+
+def swap_officers(s):
+    lines = s.split("\n")
+    idx = [i for i, l in enumerate(lines) if re.match(OFFICER, l)]
+    if len(idx) < 2:
+        raise SystemExit("edit not applicable: fewer than two officers")
+    lines[idx[0]], lines[idx[1]] = lines[idx[1]], lines[idx[0]]
+    return "\n".join(lines)
+
+def blank_drive_ids(s):
+    return re.sub(r'^(  (?:bylaws|bylawsCurrentFileId|meetings|presentations|letters|neighborhoodPlan|history): )"[^"]*"', r'\g<1>""', s, flags=re.M)
+
+def no_officers(s):
+    s = re.sub(OFFICER + r"\n", "", s, flags=re.M)
+    return sub1(s, r"^officers:[^\n]*$", "officers: []")
+
+def no_blocks(s):
+    return sub1(s, r"^blockCaptains:.*\Z", "blockCaptains: []\n", re.M | re.S)
+
 VALID = {
     "board.yaml: change an officer's name": ("board.yaml", lambda s: sub1(s, r"(^  - \{ role: [^}\n]*?name: )[^,}]+(,)", r"\g<1>A. Resident\g<2>")),
     "board.yaml: mark an office Vacant": ("board.yaml", _vacant),
@@ -102,12 +154,23 @@ VALID = {
     "resources.yaml: re-note a link": ("resources.yaml", lambda s: sub1(s, r"^(        note: ).*$", r"\g<1>555-0100")),
     "resources.yaml: add a group": ("resources.yaml", lambda s: s.rstrip("\n") + "\n  - title: A new group\n    links:\n      - label: Sample\n        url: https://example.org/\n"),
     "resources.yaml: remove a group": ("resources.yaml", lambda s: sub1(s, r"^  - title:.*\n(?: {4,}.*\n)*", "")),
+    "resources.yaml: a link with no note": ("resources.yaml", no_note),
+    "settings.yaml: change siteName": ("settings.yaml", lambda s: sub1(s, r"^siteName: .*$", "siteName: Fixture Neighbors Association")),
+    "settings.yaml: change shortName": ("settings.yaml", lambda s: sub1(s, r"^shortName: .*$", "shortName: FNA")),
+    "settings.yaml: change siteUrl": ("settings.yaml", lambda s: sub1(s, r"^siteUrl: .*$", "siteUrl: https://fixture.example.org")),
+    "settings.yaml: blank every drive id": ("settings.yaml", blank_drive_ids),
+    "board.yaml: reorder two officers": ("board.yaml", swap_officers),
+    "board.yaml: add block 8": ("board.yaml", lambda s: s.rstrip("\n") + "\n  - { block: 8, names: [G. Person] }\n"),
 }
 
 for page in ("about", "history", "join"):
     path, edits = md(page)
     for name, fn in edits.items():
         VALID[name] = (path, fn)
+
+# These empty a list, so they run last when all valid edits are applied together.
+VALID["board.yaml: remove every block captain"] = ("board.yaml", no_blocks)
+VALID["board.yaml: empty the officers list"] = ("board.yaml", no_officers)
 
 # name -> (file, edit, field that the failure message must name)
 INVALID = {
@@ -124,7 +187,11 @@ INVALID = {
 def apply(name, table):
     entry = table[name]
     path = C / entry[0]
-    path.write_text(entry[1](path.read_text()))
+    before = path.read_text()
+    after = entry[1](before)
+    if after == before:
+        raise SystemExit(f"edit changed nothing in {path} (a vacuous case proves nothing): {name}")
+    path.write_text(after)
 
 cmd = sys.argv[1]
 if cmd == "valid-names":
@@ -152,8 +219,8 @@ mapfile -t invalid < <(edit invalid-names)
 
 echo "== single valid edits: npm test must pass (${#valid[@]} cases)"
 for name in "${valid[@]}"; do
-  restore
-  if ! edit apply-valid "$name"; then failures+=("$name (edit could not be applied)"); continue; fi
+  restore || exit 3
+  edit apply-valid "$name" || fatal "the valid edit \"$name\" could not be applied or changed nothing"
   if npm test > "$log" 2>&1; then
     echo "ok    $name"
   else
@@ -161,33 +228,34 @@ for name in "${valid[@]}"; do
     failures+=("valid edit failed npm test: $name")
   fi
 done
-restore
+restore || exit 3
 
 echo "== all valid edits together: OFFLINE=1 npm run test:build must pass"
-if edit apply-all-valid && OFFLINE=1 npm run test:build > "$log" 2>&1; then
+edit apply-all-valid || fatal "applying all valid edits together failed or an edit changed nothing"
+if OFFLINE=1 npm run test:build > "$log" 2>&1; then
   echo "ok    all valid edits together"
 else
   echo "FAIL  all valid edits together"; tail -n 60 "$log" | sed 's/^/      /'
   failures+=("valid edits together failed test:build")
 fi
-restore
+restore || exit 3
 
 echo "== invalid edits: npm test must fail and name the file and the field (${#invalid[@]} cases)"
 for name in "${invalid[@]}"; do
-  restore
+  restore || exit 3
   file=$(edit invalid-file "$name"); field=$(edit invalid-field "$name")
-  if ! edit apply-invalid "$name"; then failures+=("$name (edit could not be applied)"); continue; fi
+  edit apply-invalid "$name" || fatal "the invalid edit \"$name\" could not be applied or changed nothing"
   if npm test > "$log" 2>&1; then
     echo "FAIL  $name: npm test passed"
     failures+=("invalid edit did not fail npm test: $name")
-  elif grep -qF -- "$file" "$log" && grep -qF -- "$field" "$log"; then
+  elif grep -F -- "$file" "$log" | grep -qF -- "$field"; then
     echo "ok    $name (names $file and $field)"
   else
-    echo "FAIL  $name: output does not name $file and $field"; grep -E "src/content" "$log" | head -5 | sed 's/^/      /'
+    echo "FAIL  $name: no output line names both $file and $field"; grep -E "src/content" "$log" | head -5 | sed 's/^/      /'
     failures+=("invalid edit failure does not name $file and $field: $name")
   fi
 done
-restore
+restore || exit 3
 
 if [ "${#failures[@]}" -gt 0 ]; then
   echo

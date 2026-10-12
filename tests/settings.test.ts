@@ -20,6 +20,12 @@ describe("settingsSchema", () => {
     expect(settings.contactEmail, "src/content/settings.yaml: contactEmail must be an email address").toMatch(/^[^@\s]+@[^@\s]+\.[^@\s]+$/);
   });
 
+  it("requires siteUrl to be an https:// URL", async () => {
+    const settings = (await load("settings.yaml")) as Record<string, unknown>;
+    expect(() => settingsSchema.parse({ ...settings, siteUrl: "http://example.org" })).toThrow();
+    expect(() => settingsSchema.parse({ ...settings, siteUrl: "https://example.org" })).not.toThrow();
+  });
+
   it("requires contactEmail to be an email address", async () => {
     const settings = (await load("settings.yaml")) as Record<string, unknown>;
     expect(() => settingsSchema.parse({ ...settings, contactEmail: "not an email" })).toThrow();
@@ -112,7 +118,8 @@ describe("isConfigured", () => {
   });
 
   it("treats whitespace-only values as blank", async () => {
-    const settings: Settings = settingsSchema.parse(await load("settings.yaml"));
+    const base: Settings = settingsSchema.parse(await load("settings.yaml"));
+    const settings: Settings = { ...base, drive: { ...base.drive, bylaws: "id-bylaws", letters: "id-letters" } };
     const status = isConfigured({ ...settings, calendarId: "  ", drive: { ...settings.drive, letters: "" } });
     expect(status.calendarId).toBe(false);
     expect(status.drive.letters).toBe(false);
@@ -122,8 +129,9 @@ describe("isConfigured", () => {
 
 describe("boardSchema", () => {
   it("accepts the committed board file", async () => {
-    const board = boardSchema.parse(await load("board.yaml"));
-    expect(board.officers.map((o) => o.role)).toContain("President");
+    // Strict-schema parse only; which offices exist is owner-edited content and is not pinned.
+    const raw = await load("board.yaml");
+    expect(() => boardSchema.parse(raw)).not.toThrow();
   });
 
   it("accepts a roster with a valid term", () => {

@@ -12,7 +12,7 @@ const driveId = z.string();
 export const settingsSchema = z.strictObject({
   siteName: z.string().min(1),
   shortName: z.string().min(1),
-  siteUrl: z.url(),
+  siteUrl: z.url({ protocol: /^https$/ }),
   contactEmail: z.email(),
   calendarId: z.string(),
   meetingRule: z.string().min(1),

@@ -999,6 +999,8 @@ describe("JoinAction", () => {
   it("offers a button to email the president when there is no form", async () => {
     const html = await render("");
     expect(html).toMatch(/<a class="button" href="mailto:president@example\.test">Email the president<\/a>/);
+    // The address itself is visible, so a reader can copy it.
+    expect(html).toMatch(/<a href="mailto:president@example\.test">president@example\.test<\/a>/);
     expect(html).not.toContain("membership form");
   });
 
@@ -1011,7 +1013,7 @@ describe("JoinAction", () => {
   it("offers the form as the button, and the email as a plain link, when a form exists", async () => {
     const html = await render("https://forms.example.test/join");
     expect(html).toMatch(/<a class="button" href="https:\/\/forms\.example\.test\/join">Open the membership form<\/a>/);
-    expect(html).toMatch(/<a href="mailto:president@example\.test">[^<]+<\/a>/);
+    expect(html).toMatch(/<a href="mailto:president@example\.test">president@example\.test<\/a>/);
     expect(html).not.toContain('class="button" href="mailto:');
     expect(html).not.toContain("target=");
   });

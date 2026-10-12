@@ -6,4 +6,4 @@ Membership in the Arlington View Civic Association is open to homeowners, renter
 
 ## How to join
 
-A resident who wishes to join can contact the president at [president@arlingtonview.org](mailto:president@arlingtonview.org).
+A resident who wishes to join can contact the president by email.

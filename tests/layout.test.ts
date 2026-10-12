@@ -11,13 +11,19 @@ const FULL_TRACE_VIEWBOX = "0 0 371.8 392.3";
 // A distinctive run from the full trace's path data, read from the file so it follows the asset.
 const FULL_TRACE_PATH = /\sd="([^"]{60})/.exec(readFileSync("src/assets/logo.svg", "utf8"))?.[1] ?? "";
 let container: AstroContainer;
+// Owner-edited content: titles are asserted against the configured name, not a literal.
+let siteName: string;
 let containerWithSite: AstroContainer;
+
+const escapeHtml = (text: string): string =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 beforeAll(async () => {
+  siteName = escapeHtml((await getSettings()).siteName);
   container = await AstroContainer.create();
   containerWithSite = await AstroContainer.create({
     astroConfig: { site: ORIGIN, trailingSlash: "always" },
@@ -125,7 +131,7 @@ describe("Base", () => {
       props: { title: "Meetings", description: "When and where AVCA meets." },
       slots: { default: "<h1>Meetings</h1>" },
     });
-    expect(html).toContain("<title>Meetings | Arlington View Civic Association</title>");
+    expect(html).toContain(`<title>Meetings | ${siteName}</title>`);
     expect(html).toContain('<meta name="description" content="When and where AVCA meets.">');
     expect(html).toContain('<html lang="en">');
     expect(html).toContain('<meta name="viewport"');
@@ -137,7 +143,7 @@ describe("Base", () => {
       props: { home: true },
       slots: { default: "<h1>Arlington View Civic Association</h1>" },
     });
-    expect(html).toContain("<title>Arlington View Civic Association</title>");
+    expect(html).toContain(`<title>${siteName}</title>`);
     expect(html).toMatch(/<meta name="description" content="[^"]{40,}">/);
   });
 
@@ -147,13 +153,13 @@ describe("Base", () => {
       props: { home: true },
       slots: { default: "<h1>x</h1>" },
     });
-    expect(asHome).toContain("<title>Arlington View Civic Association</title>");
+    expect(asHome).toContain(`<title>${siteName}</title>`);
     const notHome = await container.renderToString(Base, {
       request: at("/"),
       props: { title: "Home" },
       slots: { default: "<h1>x</h1>" },
     });
-    expect(notHome).toContain("<title>Home | Arlington View Civic Association</title>");
+    expect(notHome).toContain(`<title>Home | ${siteName}</title>`);
   });
 
   it("omits the canonical link when no site is configured", async () => {
@@ -212,6 +218,6 @@ describe("Base", () => {
     });
     // Read at test time: the address is owner-edited content, so the test asserts the wiring, not the value.
     const { contactEmail } = await getSettings();
-    expect(html).toContain(`href="mailto:${contactEmail}"`);
+    expect(html).toContain(`href="mailto:${escapeHtml(contactEmail)}"`);
   });
 });
