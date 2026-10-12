@@ -26,7 +26,8 @@
   --step-2: 1.75rem; /* 28 */
   --step-3: 2.25rem; /* 36 */
   --step-4: 3rem; /* 48 */
-  --step-display: clamp(2.25rem, 1.5rem + 3.5vw, 3.75rem); /* the next-meeting date only */
+  --step-display: clamp(2.25rem, 1.5rem + 3.5vw, 3.75rem); /* reserved: the home date now uses --step-hero */
+  --step-hero: clamp(3.25rem, 1.5rem + 8vw, 7.5rem); /* the month and day in the home meeting notice only */
 
   --leading-body: 1.55;
   --leading-heading: 1.15;

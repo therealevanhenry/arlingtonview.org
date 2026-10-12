@@ -21,15 +21,21 @@ function clock(d: Date): { time: string; meridiem: string } {
   return { time: `${p.hour}:${p.minute}`, meridiem: (p.dayPeriod ?? "").toLowerCase() };
 }
 
-/** e.g. `Wednesday, September 23, 2026` (New York time). */
+/** e.g. `Wednesday` (New York time). The first line of the home page date lockup. */
+export function formatMeetingWeekday(start: Date): string {
+  return parts(start, { weekday: "long" }).weekday;
+}
+
+/** e.g. `September 23` (New York time). The second line of the home page date lockup. */
+export function formatMeetingMonthDay(start: Date): string {
+  const p = parts(start, { month: "long", day: "numeric" });
+  return `${p.month} ${p.day}`;
+}
+
+/** e.g. `Wednesday, September 23, 2026` (New York time): the weekday, the month and day, and the year. */
 export function formatMeetingDate(start: Date): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: TIME_ZONE,
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(start);
+  const { year } = parts(start, { year: "numeric" });
+  return `${formatMeetingWeekday(start)}, ${formatMeetingMonthDay(start)}, ${year}`;
 }
 
 /** e.g. `7:00 to 8:30 pm`; both meridiems when they differ (New York time). */

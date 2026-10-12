@@ -14,7 +14,8 @@ want one thing first: when and where the next meeting is. The site answers that,
 of documents and county links.
 
 The idea: indigo ink on warm paper, set like a well-kept public notice. Everything is typography and
-rules. The one flourish, the cornice, comes from the house itself.
+rules. The one flourish, the cornice, comes from the house itself. The home page takes the idea literally:
+its hero is the next meeting, set as a notice posted on the wall of the house (see "The meeting notice").
 
 Hard limits: no client JavaScript, no imagery beyond the logo, no shadows, no rounded cards, no motion,
 no gradients except the cornice dentils, no italics (none are loaded), no all-caps or letterspaced labels,
@@ -73,11 +74,13 @@ artwork would. `--indigo` stays `#3A3796` as the spec pins it.
 | `--step-2` | 1.75rem (28) | h2; h1 on phones |
 | `--step-3` | 2.25rem (36) | h1 from 40rem up |
 | `--step-4` | 3rem (48) | reserved |
-| `--step-display` | `clamp(2.25rem, 1.5rem + 3.5vw, 3.75rem)` | the next-meeting date only (`.display`) |
+| `--step-display` | `clamp(2.25rem, 1.5rem + 3.5vw, 3.75rem)` | reserved; it set the next-meeting date before `--step-hero` took over |
+| `--step-hero` | `clamp(3.25rem, 1.5rem + 8vw, 7.5rem)` | the month and day in the home meeting notice only (`.notice-monthday`) |
 
-- Line height: body 1.55, headings 1.15, display 1.05. Prose measure `--measure: 70ch`.
-- Weights: h1 and h2 Garamond 500, h3 Garamond 600, display date Garamond 400. Body 400; emphasis and
-  table headers 600.
+- Line height: body 1.55, headings 1.15, display 1.05, the hero month and day 0.95. Prose measure
+  `--measure: 70ch`.
+- Weights: h1 and h2 Garamond 500, h3 Garamond 600, the hero month and day and the lead Garamond 400.
+  Body 400; emphasis and table headers 600.
 - Figures: `lining-nums` wherever Garamond sets dates or times, `tabular-nums` in tables and file dates.
   The fontsource latin subset has no `lnum` or `onum` feature; its default figures are already lining, so
   `lining-nums` is a statement of intent that costs nothing.
@@ -104,15 +107,76 @@ rows, list entries), not every block.
   centered in the viewport, with `--gutter` side padding: 16px at phone width, growing to `--space-6`.
 - Prose sits in `.measure` (70ch) at the left edge of the container. The empty right side at wide widths
   is deliberate.
-- One breakpoint, 40rem, phone-first. No fixed widths; nothing scrolls horizontally at 320px.
+- One general breakpoint, 40rem, phone-first. The home meeting notice adds two of its own: 48rem, where
+  the cornice steps up to its larger scale, and 56rem, where the notice becomes two columns. No fixed
+  widths; nothing scrolls horizontally at 320px.
 - Header: mark and wordmark on the left, nav on the right. When they do not fit on one line the nav wraps
   beneath the brand as a plain flex-wrapped list. No menu button.
 
 ## The cornice
 
-The top edge of the next-meeting block, and nothing else on the site, carries a cornice taken from the
-house: a 2px `--indigo` rule with a dentil course beneath it (6px teeth, 5px tall, 12px pitch), drawn as a
-CSS background on `.cornice`. No image. In print the teeth drop and the rule stays.
+The top edge of the home meeting notice, and nothing else on the site, carries a cornice taken from the
+house. Top to bottom: a 3px `--indigo` crown rule, a dentil course, and a 1px `--indigo` fascia rule 3px
+beneath the dentils. It projects past the wall (the tint ground) on both sides, so it reads as a piece of
+the building and not as a border.
+
+| | Under 48rem | From 48rem |
+|---|---|---|
+| Dentil (`--dentil-width` x `--dentil-height`) | 6px x 5px | 8px x 7px |
+| Pitch (`--dentil-pitch`) | 12px | 16px |
+| Projection each side (`--cornice-overhang`) | 6px | 10px |
+| Total height (`--cornice-height`) | 12px | 14px |
+
+- Pure CSS on `.cornice::before`: the crown and fascia are its top and bottom borders, and the dentils
+  are a hard-stopped `linear-gradient` clipped to its content box. No image, no extra markup. The
+  dimensions are custom properties on `.cornice` (`--cornice-crown`, `--cornice-gap`, `--cornice-fascia`,
+  and the four in the table), so both sizes and print share one rule set.
+- The course always begins and ends on a whole tooth. `padding-inline` on the pseudo-element is half of
+  what is left over after fitting whole pitches (`mod()`), floored to a whole pixel (`round()`), so every
+  tooth sits on the pixel grid and the inset differs by under 2px between the two ends, at any container
+  width. Where `mod()` and `round()` are unsupported the declaration drops and the course starts at the
+  left edge, which can leave a part tooth at the right end.
+- The projection is smaller than the page gutter at every width (16px minimum), so it never causes a
+  horizontal scroll.
+- `.cornice` sets `position: relative` and expects the block to leave `--cornice-height` of extra top
+  padding; `.notice-hero` does.
+- Print: the custom properties collapse to the 3px crown rule alone, with no projection.
+
+## The meeting notice
+
+The home page hero (`src/components/NextMeeting.astro`, classes `notice notice-hero cornice`) is the next
+meeting set as a posted notice. The tint ground is the wall, the cornice projects above it, and the date is
+a lockup the type carries. It is the one bold thing on the page; everything around it stays quiet.
+
+- Heading: `Next meeting`, an `h2` in Garamond 500 at `--step-1`, `--indigo`, sentence case
+  (`.notice-heading`).
+- Date lockup: one `time` element holding two lines. The weekday (`.notice-weekday`) is Garamond 500 at
+  `--step-2`. The month and day (`.notice-monthday`) are Garamond 400 at `--step-hero`, line height 0.95,
+  `letter-spacing: -0.01em`, lining figures, never wrapping. The year is not shown; the full date with the
+  year appears wherever `formatMeetingRange` or `formatMeetingDate` is used.
+- The month and day never overflow. `.notice-date` is an inline-size container and the font size is
+  `min(var(--step-hero), 19.2cqi)`: the widest dates (the two-digit days of November, then September)
+  measure 5.15em at this tracking, so 19.2% of the column is the largest size at which every date fits on
+  one line. In practice the cap applies in the two-column layout and on phones narrower than about 350px.
+- Two optical corrections on the month and day: `margin-block-start: -0.05em` closes the lockup up under
+  the weekday, and `margin-inline-start: -0.02em` brings the round capitals (O, S) out to the left edge
+  the weekday sets.
+- Details (`.notice-details`, a `.stack`): the time (`.notice-time`, Garamond 400 at `--step-2`, the same
+  size and leading as the weekday), the place at body size, the virtual-link note with the contact link
+  (`.notice-note`, 34ch), the agenda link when there is one, and the `.actions` row.
+- Layout: one column under 56rem, the details following the lockup after `--space-5`, with no dividing
+  rule. From 56rem, two columns, `minmax(0, 1.6fr)` and `minmax(18rem, 1fr)`, with a `--space-7` gap; the
+  details column carries a 1px `--indigo` rule on its left edge and `--space-6` of padding. The heading
+  spans both columns, so the details start level with the weekday and the first baseline of the time sits
+  on the weekday's. The rule is as tall as the details, not the block.
+- Padding (`--notice-pad`): `--space-5` on phones, `--space-6` from 40rem, `--space-7` from 56rem, plus
+  `--cornice-height` at the top.
+- Fallback (no upcoming meeting, or the calendar could not be read): the same notice and grid. In place of
+  the lockup, the standing meeting rule as a Garamond 400 lead at `--step-2`, at most 22em wide
+  (`.notice-rule`). The details hold the note with the contact link and the two subscribe links. The note's
+  capitals top-align with the rule's first line.
+- Nothing in the notice depends on the build time, and nothing from a meeting is printed beyond date,
+  time, place, and the agenda link.
 
 ## Components
 
@@ -126,14 +190,16 @@ by source order and nothing needs `!important`.
 | `.stack` | vertical rhythm: `> * + *` gets `--stack-gap` (default `--space-4`); margins are otherwise reset to 0 |
 | `.sections` | same, at `--section-gap`, for the top-level sections of a page |
 | `.visually-hidden` | available to screen readers, not drawn |
-| `.display` | the next-meeting date |
-| `.button` | the one primary action in a block: solid indigo, paper text, Source Sans 600, 2px radius, 44px minimum height. Secondary actions are plain links, never ghost buttons |
-| `.actions` | wrapping flex row of one `.button` followed by plain links, vertically centered on the button; each plain link has a 44px minimum tap height. Reusable on any page |
-| `.notice-meta` / `.notice-time` | a tight group of lines inside a `.notice` (`--space-1` between lines; the notice's `.stack` separates groups). `.notice-time` is the time line at `--step-1` |
-| `.notice` | tint ground, padded (`--space-5`, `--space-6` from 40rem). With `.cornice` it is the next-meeting block |
+| `.button` | the one primary action in a block: solid indigo, paper text, Source Sans 600, 2px radius, 44px minimum height. Secondary actions are plain links, never ghost buttons. The home page has exactly one: `Add to Google Calendar` |
+| `.actions` | wrapping flex row of at most one `.button` followed by plain links, vertically centered on the button; each plain link has a 44px minimum tap height. Also used for a lone plain link that needs the tap height (`How to join` under the home lead). Reusable on any page |
+| `.notice-meta` | a tight group of lines inside a `.notice` (`--space-1` between lines; the `.stack` around the groups separates them) |
+| `.notice` | tint ground, padded by `--notice-pad` (`--space-5`, `--space-6` from 40rem) |
 | `.callout` | same ground and padding, no cornice, no accent bar |
-| `.cornice` | see above; next-meeting block only |
-| `.entries` / `.entry` / `.entry-title` | ruled entry list: auto-fit grid (min `min(15rem, 100%)`, so a 72rem container gives 1 column on phones, 2 x 2 at mid widths, 4 across at full width, never 3 + 1), each entry a 1px top rule, a Garamond heading link, one line of body text |
+| `.cornice` | see "The cornice"; home meeting notice only |
+| `.notice-hero` | modifier on `.notice.cornice` for the home hero: the grid, the wider padding, and the top padding that clears the cornice. See "The meeting notice" |
+| `.notice-heading`, `.notice-date`, `.notice-weekday`, `.notice-monthday`, `.notice-rule`, `.notice-details`, `.notice-time`, `.notice-note` | the parts of the meeting notice; not for use elsewhere |
+| `.lead` | an opening paragraph: Garamond 400, `clamp(1.3125rem, 1.1rem + 0.9vw, 1.5rem)`, line height 1.35, `--ink`, at most 44rem wide. One per page, directly under the hero or the `h1`; it tops out a step below the notice's weekday and time so it does not compete with them |
+| `.entries` / `.entry` / `.entry-title` | ruled entry list: auto-fit grid (min `min(14rem, 100%)`), each entry a 1px top rule, a Garamond heading link, one line of body text. Auto-fit can strand one entry on a last row; for a set of four use `.entries-four` |
 | `.entries-four` | modifier on `.entries` for sets of exactly four: 1 column, 2 x 2 from 36rem, 4 across from 64rem (`min-width` queries). Columns are 249px wide at the 36rem switch and 216px at the 64rem switch (gutters and 2rem gap included), so none is under 12rem. Use it instead of auto-fit, which always has a width band that lands 3 + 1 |
 | `.table` | left-aligned table with 1px row rules and tabular figures. Under 40rem each row restacks as a block and each cell is labelled from `td[data-label]`, so every `td` needs a `data-label` |
 | `.files` / `.file` / `.file-date` | plain list: a link plus a secondary date |
@@ -145,7 +211,8 @@ Links are indigo with a 1px underline at 0.15em offset that thickens to 2px on h
 exception: `--ink`, no underline until hover or focus, and the current section (`aria-current="page"`)
 gets a 2px indigo bottom border. Focus is a 2px indigo outline at 2px offset on everything.
 
-Print: nav, skip link, and footer links are hidden; tokens flip to black on white; no tint ground.
+Print: nav, skip link, and footer links are hidden; tokens flip to black on white; no tint ground; the
+cornice is its crown rule alone.
 
 Markup conventions:
 

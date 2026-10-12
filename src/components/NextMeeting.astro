@@ -1,7 +1,7 @@
 ---
 import { addToGoogleCalendarUrl, subscribeLinks, type Meeting } from "../lib/calendar";
 import type { Settings } from "../lib/settings";
-import { formatMeetingDate, formatMeetingTime } from "../lib/time";
+import { formatMeetingMonthDay, formatMeetingTime, formatMeetingWeekday } from "../lib/time";
 
 interface Props {
   /** The next upcoming meeting, if any. Only parsed fields are printed, never free text. */
@@ -18,53 +18,58 @@ const mailto = `mailto:${settings.contactEmail}`;
 const agenda = agendaUrl ?? meeting?.agendaUrl;
 ---
 
-<section class="notice cornice stack" aria-labelledby="next-meeting">
-  <h2 id="next-meeting">Next meeting</h2>
+{/* The home hero: a posted meeting notice. Left, the date lockup (or the standing rule); right, the details. */}
+<section class="notice notice-hero cornice" aria-labelledby="next-meeting">
+  <h2 class="notice-heading" id="next-meeting">Next meeting</h2>
   {
     meeting ? (
-      <>
+      <p class="notice-date">
+        <time datetime={meeting.start.toISOString()}>
+          <span class="notice-weekday">{formatMeetingWeekday(meeting.start)}</span>{" "}
+          <span class="notice-monthday">{formatMeetingMonthDay(meeting.start)}</span>
+        </time>
+      </p>
+    ) : (
+      <p class="notice-rule">{settings.meetingRule}</p>
+    )
+  }
+  <div class="notice-details stack">
+    {
+      meeting && (
         <div class="notice-meta">
-          <p class="display">
-            <time datetime={meeting.start.toISOString()}>{formatMeetingDate(meeting.start)}</time>
-          </p>
           <p class="notice-time">{formatMeetingTime(meeting.start, meeting.end)}</p>
           <p>{meeting.isVirtual ? "Virtual meeting" : meeting.location}</p>
         </div>
-        {(meeting.isVirtual || agenda !== undefined) && (
-          <div class="notice-meta">
-            {meeting.isVirtual && (
-              <p>
-                {settings.virtualLinkNote} <a href={mailto}>{settings.contactEmail}</a>
-              </p>
-            )}
-            {agenda !== undefined && (
-              <p>
-                <a href={agenda}>Agenda</a>
-              </p>
-            )}
-          </div>
-        )}
-      </>
-    ) : (
-      <div class="notice-meta">
-        <p>{settings.meetingRule}</p>
-        <p>
-          {settings.virtualLinkNote} <a href={mailto}>{settings.contactEmail}</a>
-        </p>
-      </div>
-    )
-  }
-  {
-    (meeting !== undefined || subscribe !== undefined) && (
-      <div class="actions">
-        {meeting && (
-          <a class="button" href={addToGoogleCalendarUrl(meeting)}>
-            Add to Google Calendar
-          </a>
-        )}
-        {subscribe !== undefined && <a href={subscribe.google}>Subscribe to calendar</a>}
-        {subscribe !== undefined && <a href={subscribe.ics}>Calendar file (ICS)</a>}
-      </div>
-    )
-  }
+      )
+    }
+    {
+      (meeting === undefined || meeting.isVirtual || agenda !== undefined) && (
+        <div class="notice-meta">
+          {(meeting === undefined || meeting.isVirtual) && (
+            <p class="notice-note">
+              {settings.virtualLinkNote} <a href={mailto}>{settings.contactEmail}</a>
+            </p>
+          )}
+          {meeting !== undefined && agenda !== undefined && (
+            <p>
+              <a href={agenda}>Agenda</a>
+            </p>
+          )}
+        </div>
+      )
+    }
+    {
+      (meeting !== undefined || subscribe !== undefined) && (
+        <div class="actions">
+          {meeting && (
+            <a class="button" href={addToGoogleCalendarUrl(meeting)}>
+              Add to Google Calendar
+            </a>
+          )}
+          {subscribe !== undefined && <a href={subscribe.google}>Subscribe to calendar</a>}
+          {subscribe !== undefined && <a href={subscribe.ics}>Calendar file (ICS)</a>}
+        </div>
+      )
+    }
+  </div>
 </section>

@@ -2,7 +2,8 @@
  * Global styles: reset, base elements, utilities, components.
  * Tokens live in tokens.css; the rationale lives in design/README.md.
  * Specificity stays flat: one class per selector, with :where() for anything nested.
- * Phone-first; the one breakpoint is 40rem.
+ * Phone-first; the one general breakpoint is 40rem. The home meeting notice adds two of its own
+ * (48rem for the cornice scale, 56rem for its two columns).
  */
 
 /* ---------- Reset ---------- */
@@ -136,15 +137,6 @@ a:hover {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-
-/* The next-meeting date, and nothing else. */
-.display {
-  font-family: var(--font-display);
-  font-size: var(--step-display);
-  font-weight: 400;
-  font-variant-numeric: lining-nums;
-  line-height: var(--leading-display);
 }
 
 /* ---------- Page frame ---------- */
@@ -315,39 +307,166 @@ a:hover {
   min-height: 2.75rem;
 }
 
-/* ---------- Notice, callout, cornice ---------- */
+/* ---------- Notice and callout ---------- */
 
 .notice,
 .callout {
-  padding: var(--space-5);
+  --notice-pad: var(--space-5);
+  padding: var(--notice-pad);
   background-color: var(--tint);
 }
 
-/* A tight group of lines inside a notice; the notice's own stack separates groups. */
+/* A tight group of lines inside a notice; the stack around the groups separates them. */
 .notice-meta > * + * {
   margin-block-start: var(--space-1);
 }
 
-.notice-time {
+/* ---------- Cornice ---------- */
+
+/*
+ * The one flourish, taken from the house, on the home meeting notice only. Top to bottom: a crown
+ * rule, a dentil course, and a fascia rule, projecting past the wall on both sides. The dimensions
+ * are custom properties so the phone and wide sizes (and print) share this one rule set.
+ */
+.cornice {
+  --cornice-crown: 3px;
+  --cornice-gap: 3px; /* dentils to fascia */
+  --cornice-fascia: 1px;
+  --cornice-overhang: 6px; /* less than the 16px phone gutter, so it never scrolls the page */
+  --dentil-width: 6px;
+  --dentil-height: 5px;
+  --dentil-pitch: 12px;
+  --cornice-height: calc(
+    var(--cornice-crown) + var(--dentil-height) + var(--cornice-gap) + var(--cornice-fascia)
+  );
+  position: relative;
+}
+
+/* The crown and fascia are the borders; the dentils are a hard-stopped gradient in the content box. */
+.cornice::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: calc(-1 * var(--cornice-overhang));
+  height: var(--cornice-height);
+  padding-block-end: var(--cornice-gap);
+  /*
+   * Inset the course so it begins and ends on a whole tooth: half of what is left over after fitting
+   * whole pitches, floored to a pixel so every tooth stays on the pixel grid. The same inset on both
+   * sides leaves under 2px spare after the last tooth, which absorbs a fractional container width
+   * without clipping that tooth or letting a sliver of the next one in. Without mod() and round()
+   * the declaration drops and the course simply runs from the left edge.
+   */
+  padding-inline: round(
+    down,
+    mod(100% + 2 * var(--cornice-overhang) - var(--dentil-width), var(--dentil-pitch)) / 2,
+    1px
+  );
+  border-block-start: var(--cornice-crown) solid var(--indigo);
+  border-block-end: var(--cornice-fascia) solid var(--indigo);
+  background-image: linear-gradient(to right, var(--indigo) var(--dentil-width), transparent var(--dentil-width));
+  background-size: var(--dentil-pitch) 100%;
+  background-repeat: repeat-x;
+  background-origin: content-box;
+  background-clip: content-box;
+}
+
+/* ---------- Meeting notice (home hero) ---------- */
+
+/*
+ * The next-meeting block as a notice posted on the wall of the house: the tint is the wall, the
+ * cornice projects past it, and the date is a lockup the type carries. One column on phones; from
+ * 56rem the lockup sits left and the details right, behind a rule (see the end of this file).
+ */
+.notice-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  padding-block-start: calc(var(--cornice-height) + var(--notice-pad));
+}
+
+.notice-heading {
+  margin-block-end: var(--space-2);
+  color: var(--indigo);
   font-size: var(--step-1);
 }
 
+/* A size container, so the month and day can be capped by the width of their own column. */
+.notice-date {
+  container-type: inline-size;
+}
+
+.notice-weekday,
+.notice-monthday {
+  display: block;
+  font-family: var(--font-display);
+  font-variant-numeric: lining-nums;
+}
+
+.notice-weekday {
+  font-size: var(--step-2);
+  font-weight: 500;
+  line-height: var(--leading-heading);
+}
+
 /*
- * The one flourish, taken from the house: a 2px rule with a dentil course beneath it
- * (6px teeth, 5px tall, 12px pitch). Next-meeting block only.
+ * One line, always. The widest dates (the two-digit days of November, then September) are 5.15em
+ * wide at this tracking, so 19.2% of the column is the largest size at which every date fits with a
+ * little to spare; --step-hero applies wherever the column has room for it. The two negative margins
+ * are optical: one closes the lockup up under the weekday, the other pulls the round and
+ * loose-fitting capitals (O, S) out toward the left edge the weekday sets.
  */
-.cornice {
-  border-block-start: 2px solid var(--indigo);
-  background-image: linear-gradient(to right, var(--indigo) 6px, transparent 6px);
-  background-size: 12px 5px;
-  background-repeat: repeat-x;
+.notice-monthday {
+  margin-block-start: -0.05em;
+  margin-inline-start: -0.02em;
+  font-size: var(--step-hero);
+  font-size: min(var(--step-hero), 19.2cqi);
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* The fallback lead: the standing meeting rule, in place of the date. */
+.notice-rule {
+  max-width: 22em;
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-variant-numeric: lining-nums;
+  line-height: 1.2;
+}
+
+.notice-details {
+  margin-block-start: var(--space-5);
+}
+
+/* Same size and leading as the weekday, so in two columns their first baselines are level. */
+.notice-time {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-variant-numeric: lining-nums;
+  line-height: var(--leading-heading);
+}
+
+.notice-note {
+  max-width: 34ch;
+}
+
+/* ---------- Lead paragraph ---------- */
+
+/* Tops out at 1.5rem, a step under the notice's weekday and time, so it never competes with the hero. */
+.lead {
+  max-width: 44rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.3125rem, 1.1rem + 0.9vw, 1.5rem);
+  font-variant-numeric: lining-nums;
+  line-height: 1.35;
 }
 
 /* ---------- Ruled entry list ---------- */
 
 .entries {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
   gap: var(--space-5) var(--space-6);
   padding: 0;
   list-style: none;
@@ -472,7 +591,40 @@ a:hover {
 
   .notice,
   .callout {
-    padding: var(--space-6);
+    --notice-pad: var(--space-6);
+  }
+}
+
+/* ---------- Meeting notice breakpoints ---------- */
+
+/* After the 40rem block, so the hero's padding wins the tie with .notice by source order. */
+
+@media (min-width: 48rem) {
+  .cornice {
+    --cornice-overhang: 10px;
+    --dentil-width: 8px;
+    --dentil-height: 7px;
+    --dentil-pitch: 16px;
+  }
+}
+
+@media (min-width: 56rem) {
+  .notice-hero {
+    --notice-pad: var(--space-7);
+    grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 1fr);
+    column-gap: var(--space-7);
+    align-items: start;
+  }
+
+  .notice-heading {
+    grid-column: 1 / -1;
+  }
+
+  /* The rule is as tall as the details, and starts level with the top of the weekday line. */
+  .notice-details {
+    margin-block-start: 0;
+    padding-inline-start: var(--space-6);
+    border-inline-start: 1px solid var(--indigo);
   }
 }
 
@@ -492,8 +644,12 @@ a:hover {
     background-color: transparent;
   }
 
+  /* The crown rule only: no dentils, no fascia, no overhang. */
   .cornice {
-    background-image: none;
+    --cornice-gap: 0px;
+    --cornice-fascia: 0px;
+    --cornice-overhang: 0px;
+    --dentil-height: 0px;
   }
 
   .button {
