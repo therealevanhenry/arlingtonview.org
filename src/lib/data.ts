@@ -40,6 +40,11 @@ export function createSiteDataLoader(deps: SiteDataDeps = defaultDeps): () => Pr
         deps.loadCalendar(settings, now),
         deps.loadAllFolders(settings, deps.apiKey()),
       ]);
+      // One recognizable line for scripts/build-health.sh. The reason is a fixed short string from the
+      // loader, never a response body. Quiet when the calendar was deliberately not fetched.
+      if (!calendar.ok && settings.calendarId.trim() !== "" && process.env.OFFLINE !== "1") {
+        console.warn(`[calendar] not loaded: ${calendar.reason}; the meetings list will be empty`);
+      }
       const meetings = calendar.ok ? calendar.meetings : [];
       const rows = buildArchive(meetings, { meetings: folders.meetings, presentations: folders.presentations });
       return { settings, now, calendar, folders, rows };

@@ -60,4 +60,41 @@ describe("createSiteDataLoader", () => {
     expect(loadAllFolders.mock.calls[0][1]).toBe("k");
     expect(a.rows).toEqual([]);
   });
+
+  describe("calendar failure warning", () => {
+    const run = async (calendar: { ok: false; reason: string }, calendarId: string, offline?: string) => {
+      const settings = { ...(await getSettings()), calendarId };
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const previous = process.env.OFFLINE;
+      if (offline === undefined) delete process.env.OFFLINE;
+      else process.env.OFFLINE = offline;
+      try {
+        await createSiteDataLoader({
+          getSettings: async () => settings,
+          loadCalendar: async () => calendar,
+          loadAllFolders: async () => folders(),
+          now: () => new Date("2026-10-12T00:00:00Z"),
+          apiKey: () => "k",
+        })();
+        return warn.mock.calls.map((c) => String(c[0]));
+      } finally {
+        if (previous === undefined) delete process.env.OFFLINE;
+        else process.env.OFFLINE = previous;
+        warn.mockRestore();
+      }
+    };
+
+    it("warns once with a [calendar] prefix and the safe reason when a configured calendar fails", async () => {
+      const lines = await run({ ok: false, reason: "HTTP 503" }, "cal@group.calendar.google.com");
+      expect(lines).toEqual(["[calendar] not loaded: HTTP 503; the meetings list will be empty"]);
+    });
+
+    it("stays quiet when OFFLINE=1", async () => {
+      expect(await run({ ok: false, reason: "OFFLINE=1" }, "cal@group.calendar.google.com", "1")).toEqual([]);
+    });
+
+    it("stays quiet when the calendar ID is blank", async () => {
+      expect(await run({ ok: false, reason: "calendarId is blank" }, "  ")).toEqual([]);
+    });
+  });
 });
