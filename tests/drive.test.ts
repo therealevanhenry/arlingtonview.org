@@ -203,6 +203,74 @@ describe("listFolder", () => {
     expect(!r2.ok && r2.reason).toBe("invalid response");
   });
 
+  it("treats a missing files property as an empty list, but rejects non-array files and non-object bodies", async () => {
+    const r = await listFolder("F1", "k", mockFetch({}));
+    expect(r.ok && r.files).toEqual([]);
+    for (const body of [{ files: {} }, { files: null }, [], "text", 7, null]) {
+      const bad = await listFolder("F1", "k", mockFetch(body));
+      expect(!bad.ok && bad.reason).toBe("invalid response");
+    }
+  });
+
+  it("reports 'too many pages' when pagination never ends", async () => {
+    const fetchImpl = vi.fn(async () => json({ files: [], nextPageToken: "more" }));
+    const r = await listFolder("F1", "k", fetchImpl as unknown as typeof fetch);
+    expect(!r.ok && r.reason).toBe("too many pages");
+    expect(fetchImpl).toHaveBeenCalledTimes(50);
+  });
+
+  it("classifies a body read that times out as 'timeout' and uses the one retry", async () => {
+    const fetchImpl = vi.fn(async () => {
+      const stream = new ReadableStream({
+        pull(controller) {
+          controller.error(new DOMException("timed out", "TimeoutError"));
+        },
+      });
+      return new Response(stream, { status: 200 });
+    });
+    const r = await listFolder("F1", "k", fetchImpl as unknown as typeof fetch);
+    expect(!r.ok && r.reason).toBe("timeout");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies a body read that fails otherwise as 'network error' and retries", async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      if (++calls === 2) return json({ files: [entry("a", "A")] });
+      const stream = new ReadableStream({
+        pull(controller) {
+          controller.error(new TypeError(`terminated ${KEY}`));
+        },
+      });
+      return new Response(stream, { status: 200 });
+    });
+    const r = await listFolder("F1", KEY, fetchImpl as unknown as typeof fetch);
+    expect(r.ok).toBe(true);
+    expect(calls).toBe(2);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(KEY);
+  });
+
+  it("never throws for a non-string folder ID", async () => {
+    const spy = vi.fn();
+    for (const id of [undefined, null, 42, {}]) {
+      const r = await listFolder(id as unknown as string, "k", spy as unknown as typeof fetch);
+      expect(r).toEqual({ ok: false, folderUrl: folderUrl(""), reason: "no folder ID" });
+      const t = await listTree(id as unknown as string, "k", spy as unknown as typeof fetch);
+      expect(t.ok).toBe(false);
+    }
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("escapes backslash and single quote in the folder ID inside q", async () => {
+    const urls: URL[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      urls.push(new URL(String(input)));
+      return json({ files: [] });
+    }) as unknown as typeof fetch;
+    await listFolder("a'b\\c", "k", fetchImpl);
+    expect(urls[0].searchParams.get("q")).toBe("'a\\'b\\\\c' in parents and trashed=false");
+  });
+
   it("never leaks the API key into reasons or warnings", async () => {
     const cases: Array<typeof fetch> = [
       (async () => {
@@ -216,8 +284,11 @@ describe("listFolder", () => {
       const r = await listFolder("F1", KEY, fetchImpl);
       expect(r.ok).toBe(false);
       expect(JSON.stringify(r)).not.toContain(KEY);
+      const t = await listTree("F1", KEY, fetchImpl);
+      expect(t.ok).toBe(false);
+      expect(JSON.stringify(t)).not.toContain(KEY);
     }
-    expect(warn).toHaveBeenCalledTimes(cases.length);
+    expect(warn).toHaveBeenCalledTimes(cases.length * 2);
     expect(JSON.stringify(warn.mock.calls)).not.toContain(KEY);
   });
 });
@@ -298,6 +369,87 @@ describe("listTree", () => {
     expect(text).toContain("ROOT");
     expect(text).toContain("HTTP 403");
     expect(text).not.toContain(KEY);
+  });
+
+  it("returns the same files regardless of response completion order", async () => {
+    const tree: Record<string, Raw[]> = {
+      R: [entry("S1", "one", FOLDER), entry("S2", "two", FOLDER), entry("S3", "three", FOLDER)],
+      S1: [entry("b-id", "Same 2026-05-05"), entry("a-id", "Same 2026-05-05")],
+      S2: [entry("c-id", "Same 2026-05-05"), entry("a-id2", "Other 2026-05-05")],
+      S3: [entry("d-id", "Same 2026-05-05")],
+    };
+    const run = async (delays: Record<string, number>) => {
+      const fetchImpl = (async (input: RequestInfo | URL) => {
+        const id = parentOf(input);
+        await new Promise((r) => setTimeout(r, delays[id] ?? 0));
+        return json({ files: tree[id] ?? [] });
+      }) as unknown as typeof fetch;
+      const r = await listTree("R", "k", fetchImpl);
+      if (!r.ok) throw new Error("expected ok");
+      return r.files;
+    };
+    const forward = await run({ S1: 1, S2: 15, S3: 30 });
+    const backward = await run({ S1: 30, S2: 15, S3: 1 });
+    expect(backward).toEqual(forward);
+    const sameName = forward.filter((f) => f.name === "Same 2026-05-05").map((f) => f.id);
+    expect(sameName).toEqual(["a-id", "b-id", "c-id", "d-id"]);
+  });
+
+  it("returns ok for a tree containing an empty subfolder whose response is {}", async () => {
+    const fetchImpl = (async (input: RequestInfo | URL) =>
+      parentOf(input) === "R" ? json({ files: [entry("E", "empty", FOLDER)] }) : json({})) as unknown as typeof fetch;
+    const r = await listTree("R", "k", fetchImpl);
+    expect(r.ok && r.files.map((f) => f.id)).toEqual(["E"]);
+  });
+
+  it("reports the failure of the first failing folder in listing order, not the first to finish", async () => {
+    const tree: Record<string, Raw[]> = {
+      R: [entry("S1", "one", FOLDER), entry("S2", "two", FOLDER), entry("S3", "three", FOLDER)],
+    };
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const id = parentOf(input);
+      if (id === "S1") {
+        await new Promise((r) => setTimeout(r, 30));
+        return new Response("{}", { status: 403 });
+      }
+      if (id === "S2") return new Response("{}", { status: 404 });
+      return json({ files: tree[id] ?? [] });
+    }) as unknown as typeof fetch;
+    const r = await listTree("R", "k", fetchImpl);
+    expect(r).toEqual({ ok: false, folderUrl: folderUrl("R"), reason: "HTTP 403" });
+  });
+
+  it("retries a 5xx on a subfolder", async () => {
+    const calls: Record<string, number> = {};
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const id = parentOf(input);
+      calls[id] = (calls[id] ?? 0) + 1;
+      if (id === "M10" && calls[id] === 1) return new Response("", { status: 503 });
+      return json({ files: TREE[id] ?? [] });
+    }) as unknown as typeof fetch;
+    const r = await listTree("ROOT", "k", fetchImpl);
+    expect(r.ok).toBe(true);
+    expect(calls.M10).toBe(2);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("stops scheduling new requests after a failure and settles", async () => {
+    const children = Array.from({ length: 30 }, (_, i) => entry(`S${i}`, `sub ${i}`, FOLDER));
+    const seen: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const id = parentOf(input);
+      seen.push(id);
+      if (id === "R") return json({ files: children });
+      await new Promise((r) => setTimeout(r, 5));
+      return id === "S0" ? new Response("{}", { status: 403 }) : json({ files: [] });
+    }) as unknown as typeof fetch;
+    const r = await listTree("R", "k", fetchImpl);
+    expect(!r.ok && r.reason).toBe("HTTP 403");
+    // root + at most one full pool of six; nothing scheduled after the failure
+    expect(seen.length).toBeLessThanOrEqual(7);
+    const before = seen.length;
+    await new Promise((res) => setTimeout(res, 30));
+    expect(seen.length).toBe(before);
   });
 
   it("fails without fetching on missing key, blank ID, and OFFLINE=1", async () => {

@@ -32,7 +32,11 @@ type Raw = { id: string; name: string; mimeType: string; modifiedTime?: string; 
 type Fail = { ok: false; reason: string };
 type Listing = { ok: true; raw: Raw[] } | Fail;
 
-const folderUrlFor = (id: string): string => `https://drive.google.com/drive/folders/${id.trim()}`;
+/** Settings are validated upstream, but no exported loader may throw, so a non-string ID counts as blank. */
+const cleanId = (id: unknown): string => (typeof id === "string" ? id.trim() : "");
+const folderUrlFor = (id: string): string => `https://drive.google.com/drive/folders/${id}`;
+/** Escapes a value for a single-quoted Drive `q` string literal. */
+const escapeQ = (value: string): string => value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 
 const isRaw = (v: unknown): v is Raw => {
   if (typeof v !== "object" || v === null) return false;
@@ -52,7 +56,7 @@ async function requestPage(
   timeoutMs: number,
 ): Promise<{ ok: true; raw: Raw[]; next?: string } | Fail> {
   const params = new URLSearchParams({
-    q: `'${folderId}' in parents and trashed=false`,
+    q: `'${escapeQ(folderId)}' in parents and trashed=false`,
     fields: FIELDS,
     pageSize: "200",
     supportsAllDrives: "true",
@@ -76,14 +80,22 @@ async function requestPage(
       continue;
     }
     if (response.status !== 200) return { ok: false, reason: `HTTP ${response.status}` };
+    let body: unknown;
     try {
-      const body: unknown = await response.json();
-      const { files, nextPageToken } = body as { files?: unknown; nextPageToken?: unknown };
-      if (!Array.isArray(files) || !files.every(isRaw)) return { ok: false, reason: "invalid response" };
-      return { ok: true, raw: files, next: typeof nextPageToken === "string" ? nextPageToken : undefined };
-    } catch {
+      body = await response.json();
+    } catch (error) {
+      // A body that never finishes arriving is transient (retry); a body that arrived but does not parse is not.
+      if (error instanceof SyntaxError) return { ok: false, reason: "invalid response" };
+      const aborted = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      failure = aborted ? "timeout" : "network error";
+      continue;
+    }
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
       return { ok: false, reason: "invalid response" };
     }
+    const { files = [], nextPageToken } = body as { files?: unknown; nextPageToken?: unknown };
+    if (!Array.isArray(files) || !files.every(isRaw)) return { ok: false, reason: "invalid response" };
+    return { ok: true, raw: files, next: typeof nextPageToken === "string" ? nextPageToken : undefined };
   }
   return { ok: false, reason: failure };
 }
@@ -103,7 +115,7 @@ async function listRaw(
     if (result.next === undefined) return { ok: true, raw };
     pageToken = result.next;
   }
-  return { ok: false, reason: "invalid response" };
+  return { ok: false, reason: "too many pages" };
 }
 
 function toFile(raw: Raw, path: string[]): DriveFile {
@@ -124,14 +136,19 @@ function toFile(raw: Raw, path: string[]): DriveFile {
   return file;
 }
 
-/** meetingDate descending (undated last), then modifiedTime descending. */
+/**
+ * meetingDate descending (undated last), then modifiedTime descending, then name and id ascending.
+ * Total, so the output never depends on request completion order.
+ */
 function compareFiles(a: DriveFile, b: DriveFile): number {
   if (a.meetingDate !== b.meetingDate) {
     if (a.meetingDate === undefined) return 1;
     if (b.meetingDate === undefined) return -1;
     return a.meetingDate < b.meetingDate ? 1 : -1;
   }
-  return a.modifiedTime === b.modifiedTime ? 0 : a.modifiedTime < b.modifiedTime ? 1 : -1;
+  if (a.modifiedTime !== b.modifiedTime) return a.modifiedTime < b.modifiedTime ? 1 : -1;
+  if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+  return a.id === b.id ? 0 : a.id < b.id ? -1 : 1;
 }
 
 /** Shared preflight and failure policy: one warning per failed root, never the key. */
@@ -140,16 +157,17 @@ async function guarded(
   apiKey: string | undefined,
   run: (id: string, key: string) => Promise<{ ok: true; files: DriveFile[] } | Fail>,
 ): Promise<FolderResult> {
-  const folderUrl = folderUrlFor(folderId);
+  const id = cleanId(folderId);
+  const folderUrl = folderUrlFor(id);
   const fail = (reason: string, warnAbout = true): FolderResult => {
-    if (warnAbout) console.warn(`[drive] folder "${folderId.trim()}" not listed: ${reason}; falling back to a link`);
+    if (warnAbout) console.warn(`[drive] folder "${id}" not listed: ${reason}; falling back to a link`);
     return { ok: false, folderUrl, reason };
   };
   try {
     if (process.env.OFFLINE === "1") return fail("offline", false);
-    if (folderId.trim() === "") return fail("no folder ID");
+    if (id === "") return fail("no folder ID");
     if (apiKey === undefined || apiKey === "") return fail("no API key");
-    const listing = await run(folderId.trim(), apiKey);
+    const listing = await run(id, apiKey);
     if (!listing.ok) return fail(listing.reason);
     return { ok: true, files: listing.files, folderUrl };
   } catch {
@@ -171,31 +189,36 @@ export function listFolder(
   });
 }
 
-/** Runs `task` over `items` with at most `limit` in flight; stops starting new work after a failure. */
+/**
+ * Runs `task` over `items` with at most `limit` in flight; stops starting new work after a failure.
+ * Results are in item order (items never started are omitted), not completion order.
+ */
 async function mapLimit<T, R>(
   items: T[],
   limit: number,
   task: (item: T) => Promise<R>,
   isFailure: (result: R) => boolean,
 ): Promise<R[]> {
-  const results: R[] = [];
+  const results: Array<R | undefined> = new Array(items.length).fill(undefined);
   let next = 0;
   let failed = false;
   const worker = async () => {
     while (!failed && next < items.length) {
-      const result = await task(items[next++]);
-      results.push(result);
+      const index = next++;
+      const result = await task(items[index]);
+      results[index] = result;
       if (isFailure(result)) failed = true;
     }
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
+  // Workers claim items in order, so the started items form a prefix and the filter keeps item order.
+  return results.filter((r): r is R => r !== undefined);
 }
 
 /**
  * Lists a folder and its subfolders breadth-first into one flat array. `maxDepth` is the number of
  * subfolder levels descended below the root; deeper folders appear as `isFolder` entries only.
- * All-or-nothing: any failed request fails the root.
+ * All-or-nothing: any failed request fails the root, reported as the first failure in listing order.
  */
 export function listTree(
   folderId: string,
