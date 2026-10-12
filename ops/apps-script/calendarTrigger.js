@@ -1,15 +1,21 @@
 /**
- * Fires GitHub repository_dispatch events that rebuild the AVCA website:
- *   onCalendarUpdated  "calendar-updated"  when the meeting calendar changes
- *   onDailyTick        "daily-rebuild"     time-driven, daily (second clock besides GitHub's cron)
- *   onWeeklyLinkCheck  "links-check"       time-driven, weekly
- *   testDispatch       "daily-rebuild"     run by hand to confirm the token has both permissions
- * The workflows deploy.yml and links.yml listen for these events.
+ * Starts the GitHub workflows that rebuild and check the AVCA website:
+ *   onCalendarUpdated  deploy.yml  when the meeting calendar changes
+ *   onDailyTick        deploy.yml  time-driven, daily (second clock besides GitHub's cron)
+ *   onWeeklyLinkCheck  links.yml   time-driven, weekly
+ *   testDispatch       deploy.yml  run by hand to confirm the token works
+ * Each one starts its workflow on the main branch through the workflow-dispatch endpoint, exactly as
+ * the "Run workflow" button does (the workflow's allow_degraded input keeps its default, false).
  *
  * GitHub disables scheduled workflows after 60 days without repository activity, and a disabled
  * workflow ignores every trigger, so each entry point first makes sure its workflow is active.
  *
- * Requires a script property named GITHUB_TOKEN (see README.md).
+ * Requires a script property named GITHUB_TOKEN (see README.md): a fine-grained token for this one
+ * repository with a single permission, Actions (read and write). All three calls below need only that:
+ *   GET  /actions/workflows/<file>             "Actions" repository permissions (read)
+ *   PUT  /actions/workflows/<file>/enable      "Actions" repository permissions (write)
+ *   POST /actions/workflows/<file>/dispatches  "Actions" repository permissions (write)
+ * The token cannot read or write the repository's contents, so it cannot push to main.
  * Any unexpected response throws, so Google emails the trigger's owner.
  */
 var REPO_API_ = 'https://api.github.com/repos/therealevanhenry/arlingtonview.org';
@@ -53,27 +59,31 @@ function ensureActive_(workflowFile) {
   }
 }
 
-function dispatch_(workflowFile, eventType) {
+function dispatch_(workflowFile) {
   ensureActive_(workflowFile);
-  expect_(request_('post', '/dispatches', { event_type: eventType }), 204, 'Dispatch ' + eventType);
+  // "Create a workflow dispatch event". With the API version pinned in request_ (2022-11-28) and no
+  // return_run_details parameter, GitHub answers 204 with an empty body. The 2026-03-10 API version
+  // answers 200 with the run's details instead: if the version header above is ever raised, expect 200.
+  var path = '/actions/workflows/' + workflowFile + '/dispatches';
+  expect_(request_('post', path, { ref: 'main' }), 204, 'Start ' + workflowFile);
 }
 
 function onCalendarUpdated(e) {
-  dispatch_('deploy.yml', 'calendar-updated');
+  dispatch_('deploy.yml');
 }
 
 function onDailyTick() {
-  dispatch_('deploy.yml', 'daily-rebuild');
+  dispatch_('deploy.yml');
 }
 
 function onWeeklyLinkCheck() {
-  dispatch_('links.yml', 'links-check');
+  dispatch_('links.yml');
 }
 
 function testDispatch() {
-  // Proves both token permissions on every run. The enable call needs Actions (read and write); on an
-  // active workflow it changes nothing. dispatch_ then reads the state (Actions) and sends the event
-  // (Contents).
+  // Proves the token on every run. The enable call needs Actions (write); on an active workflow it
+  // changes nothing. dispatch_ then reads the workflow's state (Actions, read) and starts a run
+  // (Actions, write).
   expect_(request_('put', '/actions/workflows/deploy.yml/enable'), 204, 'Enable deploy.yml');
-  dispatch_('deploy.yml', 'daily-rebuild');
+  dispatch_('deploy.yml');
 }

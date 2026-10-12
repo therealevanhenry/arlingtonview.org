@@ -1,18 +1,22 @@
+# Weekly check of the site's external links. Triggers: a Monday cron (12:23 UTC) and workflow_dispatch,
+# by hand or from the Apps Script project in ops/apps-script (Thursdays; a second clock in case GitHub
+# disables the cron).
 name: External links
 
 on:
   schedule:
-    - cron: "0 12 * * 1"
+    # Off the top of the hour, when GitHub's scheduler is busiest and scheduled runs are delayed or dropped.
+    - cron: "23 12 * * 1"
   workflow_dispatch:
-  repository_dispatch:
-    types: [links-check]
 
 permissions:
   contents: read
 
 jobs:
   links:
-    runs-on: ubuntu-latest
+    # Pinned (not ubuntu-latest): latest moves to Ubuntu 26 on 2026-10-19 and Playwright's --with-deps
+    # support for it is unknown. Move this together with a Playwright upgrade.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       issues: write
@@ -30,8 +34,12 @@ jobs:
 
       - name: Check external links
         id: lychee
-        uses: lycheeverse/lychee-action@v2
+        # The action is pinned to the commit of its v2.9.0 release, and the lychee binary it downloads to
+        # v0.24.2 (the action's `lycheeVersion` input; also that release's default). The exit codes that
+        # scripts/lychee-outcome.sh classifies are lychee v0.24.2's. Move the three together.
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
+          lycheeVersion: v0.24.2
           args: --config lychee.toml './dist/**/*.html'
           output: lychee/out.md
           fail: false
