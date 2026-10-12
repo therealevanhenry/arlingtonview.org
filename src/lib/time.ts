@@ -21,17 +21,31 @@ function clock(d: Date): { time: string; meridiem: string } {
   return { time: `${p.hour}:${p.minute}`, meridiem: (p.dayPeriod ?? "").toLowerCase() };
 }
 
-/** e.g. `Wednesday, September 23, 2026, 7:00 to 8:30 pm` (New York time). */
-export function formatMeetingRange(start: Date, end: Date): string {
-  const day = new Intl.DateTimeFormat("en-US", {
+/** e.g. `Wednesday, September 23, 2026` (New York time). */
+export function formatMeetingDate(start: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
     timeZone: TIME_ZONE,
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
   }).format(start);
+}
+
+/** e.g. `7:00 to 8:30 pm`; both meridiems when they differ (New York time). */
+export function formatMeetingTime(start: Date, end: Date): string {
   const s = clock(start);
   const e = clock(end);
   const startText = s.meridiem === e.meridiem ? s.time : `${s.time} ${s.meridiem}`;
-  return `${day}, ${startText} to ${e.time} ${e.meridiem}`;
+  return `${startText} to ${e.time} ${e.meridiem}`;
+}
+
+/** e.g. `Wednesday, September 23, 2026, 7:00 to 8:30 pm` (New York time). */
+export function formatMeetingRange(start: Date, end: Date): string {
+  return `${formatMeetingDate(start)}, ${formatMeetingTime(start, end)}`;
+}
+
+/** e.g. `October 6, 2026` (New York time). */
+export function formatCalendarDate(d: Date): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, year: "numeric", month: "long", day: "numeric" }).format(d);
 }

@@ -1,0 +1,34 @@
+---
+import type { ArchiveRow } from "../lib/archive";
+import { agendaFor } from "../lib/archive";
+import type { Meeting } from "../lib/calendar";
+import { formatMeetingRange } from "../lib/time";
+
+interface Props {
+  meetings: Meeting[];
+  rows: ArchiveRow[];
+}
+
+const { meetings, rows } = Astro.props;
+---
+
+{
+  meetings.length > 0 && (
+    <ul class="stack" role="list">
+      {meetings.map((m) => {
+        const agenda = agendaFor(m, rows);
+        return (
+          <li class="stack">
+            <p>{formatMeetingRange(m.start, m.end)}</p>
+            <p>{m.isVirtual ? "Virtual meeting" : m.location}</p>
+            {agenda !== undefined && (
+              <p>
+                <a href={agenda}>Agenda</a>
+              </p>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  )
+}

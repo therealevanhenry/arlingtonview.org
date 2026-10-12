@@ -35,3 +35,19 @@ describe("nowInNewYork", () => {
     expect(Math.abs(nowInNewYork().getTime() - Date.now())).toBeLessThan(5000);
   });
 });
+
+describe("formatMeetingDate and formatMeetingTime", () => {
+  const start = new Date("2026-09-29T23:00:00Z");
+  const end = new Date("2026-09-30T00:30:00Z");
+
+  it("splits the range into a date and a time", async () => {
+    const { formatMeetingDate, formatMeetingTime } = await import("../src/lib/time");
+    expect(formatMeetingDate(start)).toBe("Tuesday, September 29, 2026");
+    expect(formatMeetingTime(start, end)).toBe("7:00 to 8:30 pm");
+  });
+
+  it("formats a bare calendar date in New York time", async () => {
+    const { formatCalendarDate } = await import("../src/lib/time");
+    expect(formatCalendarDate(new Date("2026-10-07T02:30:00Z"))).toBe("October 6, 2026");
+  });
+});

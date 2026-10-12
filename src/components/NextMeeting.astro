@@ -1,0 +1,63 @@
+---
+import { addToGoogleCalendarUrl, subscribeLinks, type Meeting } from "../lib/calendar";
+import type { Settings } from "../lib/settings";
+import { formatMeetingDate, formatMeetingTime } from "../lib/time";
+
+interface Props {
+  /** The next upcoming meeting, if any. Only parsed fields are printed, never free text. */
+  meeting?: Meeting;
+  settings: Settings;
+  /** Overrides `meeting.agendaUrl` (the Drive agenda for that date). */
+  agendaUrl?: string;
+}
+
+const { meeting, settings, agendaUrl } = Astro.props;
+const calendarId = settings.calendarId.trim();
+const subscribe = calendarId === "" ? undefined : subscribeLinks(calendarId);
+const agenda = agendaUrl ?? meeting?.agendaUrl;
+---
+
+<section class="notice cornice stack" aria-labelledby="next-meeting">
+  <h2 id="next-meeting">Next meeting</h2>
+  {
+    meeting ? (
+      <>
+        <p class="display">
+          <time datetime={meeting.start.toISOString()}>{formatMeetingDate(meeting.start)}</time>
+        </p>
+        <p>{formatMeetingTime(meeting.start, meeting.end)}</p>
+        <p>{meeting.isVirtual ? "Virtual meeting" : meeting.location}</p>
+        {meeting.isVirtual && <p>{settings.virtualLinkNote}</p>}
+        {agenda !== undefined && (
+          <p>
+            <a href={agenda}>Agenda</a>
+          </p>
+        )}
+        <p>
+          <a class="button" href={addToGoogleCalendarUrl(meeting)}>
+            Add to Google Calendar
+          </a>
+        </p>
+      </>
+    ) : (
+      <>
+        <p>{settings.meetingRule}</p>
+        <p>{settings.virtualLinkNote}</p>
+      </>
+    )
+  }
+  {
+    subscribe !== undefined && (
+      <p>
+        <a href={subscribe.google}>Subscribe to calendar</a>
+      </p>
+    )
+  }
+  {
+    subscribe !== undefined && (
+      <p>
+        <a href={subscribe.ics}>Calendar file (ICS)</a>
+      </p>
+    )
+  }
+</section>

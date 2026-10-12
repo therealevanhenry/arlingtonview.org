@@ -1,0 +1,23 @@
+---
+import { withBase } from "../lib/paths";
+
+const links = [
+  { href: "/documents/#bylaws", title: "Bylaws", text: "How the association is organized and run." },
+  { href: "/meetings/#past", title: "Minutes and agendas", text: "What was discussed and decided at each meeting." },
+  { href: "/documents/#presentations", title: "Presentations", text: "Slides and updates shared with the association." },
+  { href: "/resources/", title: "County services", text: "Who to call and where to report a problem." },
+];
+---
+
+<ul class="entries" role="list">
+  {
+    links.map((l) => (
+      <li class="entry stack">
+        <h3 class="entry-title">
+          <a href={withBase(l.href)}>{l.title}</a>
+        </h3>
+        <p>{l.text}</p>
+      </li>
+    ))
+  }
+</ul>
