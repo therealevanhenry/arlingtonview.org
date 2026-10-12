@@ -3,7 +3,7 @@
  *   onCalendarUpdated  "calendar-updated"  when the meeting calendar changes
  *   onDailyTick        "daily-rebuild"     time-driven, daily (second clock besides GitHub's cron)
  *   onWeeklyLinkCheck  "links-check"       time-driven, weekly
- *   testDispatch       "daily-rebuild"     run by hand to confirm the token works
+ *   testDispatch       "daily-rebuild"     run by hand to confirm the token has both permissions
  * The workflows deploy.yml and links.yml listen for these events.
  *
  * GitHub disables scheduled workflows after 60 days without repository activity, and a disabled
@@ -71,5 +71,9 @@ function onWeeklyLinkCheck() {
 }
 
 function testDispatch() {
+  // Proves both token permissions on every run. The enable call needs Actions (read and write); on an
+  // active workflow it changes nothing. dispatch_ then reads the state (Actions) and sends the event
+  // (Contents).
+  expect_(request_('put', '/actions/workflows/deploy.yml/enable'), 204, 'Enable deploy.yml');
   dispatch_('deploy.yml', 'daily-rebuild');
 }

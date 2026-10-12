@@ -40,7 +40,9 @@ jobs:
       # lychee-action always creates the report file, so the exit code is the only reliable signal.
       - name: Classify the result
         id: classify
-        run: echo "outcome=$(scripts/lychee-outcome.sh "$LYCHEE_EXIT_CODE")" >> "$GITHUB_OUTPUT"
+        run: |
+          outcome=$(scripts/lychee-outcome.sh "$LYCHEE_EXIT_CODE")
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
         env:
           LYCHEE_EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
 
