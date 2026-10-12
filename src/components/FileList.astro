@@ -48,9 +48,10 @@ const nonEmpty = sections.filter((s) => s.files.length > 0);
                   <li class="file">
                     <a href={f.url}>{f.name}</a>
                     {d && (
-                      <time class="file-date" datetime={d.datetime}>
-                        {d.text}
-                      </time>
+                      <span class="file-date">
+                        {d.kind === "modified" && "Updated "}
+                        <time datetime={d.datetime}>{d.text}</time>
+                      </span>
                     )}
                   </li>
                 );

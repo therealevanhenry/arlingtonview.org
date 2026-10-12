@@ -79,13 +79,14 @@ export function formatArchiveDate(date: string, approximate = false): string {
   }).format(instant);
 }
 
-export type FileDate = { text: string; datetime: string };
+/** `document`: the date parsed from the file's name; `modified`: the Drive modified time, a fallback. */
+export type FileDate = { text: string; datetime: string; kind: "document" | "modified" };
 
 /** The New York modified date of a file; undefined when `modifiedTime` does not parse (never throws). */
 export function formatModifiedDate(file: DriveFile): FileDate | undefined {
   const ms = Date.parse(file.modifiedTime);
   if (Number.isNaN(ms)) return undefined;
-  return { text: formatCalendarDate(new Date(ms)), datetime: file.modifiedTime };
+  return { text: formatCalendarDate(new Date(ms)), datetime: file.modifiedTime, kind: "modified" };
 }
 
 /**
@@ -98,6 +99,7 @@ export function formatFileDate(file: DriveFile): FileDate | undefined {
     return {
       text: formatArchiveDate(file.meetingDate, approximate),
       datetime: approximate ? file.meetingDate.slice(0, 7) : file.meetingDate,
+      kind: "document",
     };
   }
   return formatModifiedDate(file);

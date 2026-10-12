@@ -554,6 +554,10 @@ describe("FileList", () => {
     expect(html).not.toContain('datetime="2025-06-01"');
     expect(html).toContain('datetime="2026-06-24"');
     expect(html).toContain("August 15, 2026");
+    // Only the undated file's fallback is labeled; the word sits outside the <time>.
+    expect(countOf(html, "Updated")).toBe(1);
+    expect(html).toMatch(/Updated\s*<time class="file-date"[^>]*>August 15, 2026<\/time>|class="file-date">Updated\s*<time[^>]*>August 15, 2026<\/time>/);
+    expect(html).not.toMatch(/Updated\s*(<time[^>]*>)?June/);
   });
 
   it("omits the date, and does not throw, for an unparseable modified time", async () => {

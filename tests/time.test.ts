@@ -124,17 +124,17 @@ describe("formatFileDate", () => {
 
   it("uses the parsed meeting date, with a full-date datetime when exact", () => {
     const f = { ...base, modifiedTime: "2026-01-01T00:00:00Z", meetingDate: "2026-06-24", approximate: false };
-    expect(formatFileDate(f)).toEqual({ text: "June 24, 2026", datetime: "2026-06-24" });
+    expect(formatFileDate(f)).toEqual({ text: "June 24, 2026", datetime: "2026-06-24", kind: "document" });
   });
 
   it("gives an approximate date as month and year with a YYYY-MM datetime", () => {
     const f = { ...base, modifiedTime: "2026-01-01T00:00:00Z", meetingDate: "2023-04-01", approximate: true };
-    expect(formatFileDate(f)).toEqual({ text: "April 2023", datetime: "2023-04" });
+    expect(formatFileDate(f)).toEqual({ text: "April 2023", datetime: "2023-04", kind: "document" });
   });
 
   it("falls back to the New York modified date", () => {
     const f = { ...base, modifiedTime: "2026-10-07T02:30:00Z" };
-    expect(formatFileDate(f)).toEqual({ text: "October 6, 2026", datetime: "2026-10-07T02:30:00Z" });
+    expect(formatFileDate(f)).toEqual({ text: "October 6, 2026", datetime: "2026-10-07T02:30:00Z", kind: "modified" });
   });
 
   it("returns undefined for an invalid timestamp instead of throwing", () => {
