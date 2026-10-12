@@ -55,10 +55,9 @@ describe("isConfigured", () => {
 });
 
 describe("boardSchema", () => {
-  it("accepts the committed board file, which carries no names", async () => {
+  it("accepts the committed board file", async () => {
     const board = boardSchema.parse(await load("board.yaml"));
-    expect(board.officers).toEqual([]);
-    expect(board.blockCaptains).toEqual([]);
+    expect(board.officers.map((o) => o.role)).toContain("President");
   });
 
   it("accepts a roster with a valid term", () => {
@@ -113,7 +112,7 @@ describe("loaders in plain Vitest (type import must not break unit tests)", () =
   });
 
   it("getBoard and getResources return parsed data", async () => {
-    expect((await getBoard()).officers).toEqual([]);
+    expect((await getBoard()).officers.length).toBeGreaterThan(0);
     expect((await getResources()).length).toBe(4);
   });
 });

@@ -1,3 +1,21 @@
 # Roster supplied by the owner. Optional: term: { start: "YYYY-MM", end: "YYYY-MM" }
-officers: []
+officers:
+  - role: President
+    name: Evan Henry
+  - role: Vice President
+    name: Craig Syphax
+  - role: Secretary
+    name: Cameron Fletcher
+  - role: Treasurer
+    name: Linda Briggs
+  - role: Parliamentarian
+    name: Vacant
+  - role: Chaplain
+    name: Wilbur Briggs
+  - role: Public Relations Officer
+    name: Vacant
+  - role: Arlington Neighborhoods Advisory Committee (ArNAC) Representative
+    name: Carter Echols
+  - role: President Emeritus
+    name: Ron Greene
 blockCaptains: []
