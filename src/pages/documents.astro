@@ -15,13 +15,14 @@ const bylaws: FolderResult = folders.bylaws.ok
   ? { ...folders.bylaws, files: preferPdfTwins(folders.bylaws.files).filter((f) => f.id !== currentId) }
   : folders.bylaws;
 
+// The one list the link row and the sections are both built from. Bylaws is the one special case (its slot).
 const sections = [
-  { id: "bylaws", title: "Bylaws" },
-  { id: "minutes", title: "Minutes and agendas" },
-  { id: "presentations", title: "Presentations" },
-  { id: "letters", title: "Official letters" },
-  { id: "neighborhood-plan", title: "Neighborhood Plan" },
-];
+  { id: "bylaws", title: "Bylaws", folder: "bylaws", group: "path" },
+  { id: "minutes", title: "Minutes and agendas", folder: "meetings", group: "path" },
+  { id: "presentations", title: "Presentations", folder: "presentations", group: "year" },
+  { id: "letters", title: "Official letters", folder: "letters", group: "path" },
+  { id: "neighborhood-plan", title: "Neighborhood Plan", folder: "neighborhoodPlan", group: "none" },
+] as const;
 ---
 
 <Base
@@ -32,16 +33,25 @@ const sections = [
   <div class="sections">
     <section class="stack">
       <h1>Documents</h1>
-      <ul class="files" role="list">
-        {sections.map((s) => <li class="file"><a href={`#${s.id}`}>{s.title}</a></li>)}
-      </ul>
+      <nav aria-label="Sections on this page">
+        <div class="actions">
+          {sections.map((s) => <a href={`#${s.id}`}>{s.title}</a>)}
+        </div>
+      </nav>
     </section>
-    <FileList result={bylaws} title="Bylaws" id="bylaws" group="path">
-      {currentBylawsUrl !== undefined && <p><a href={currentBylawsUrl}>Current bylaws (PDF)</a></p>}
-    </FileList>
-    <FileList result={folders.meetings} title="Minutes and agendas" id="minutes" group="path" />
-    <FileList result={folders.presentations} title="Presentations" id="presentations" group="year" />
-    <FileList result={folders.letters} title="Official letters" id="letters" group="path" />
-    <FileList result={folders.neighborhoodPlan} title="Neighborhood Plan" id="neighborhood-plan" />
+    {
+      sections.map((s) => {
+        const result = s.id === "bylaws" ? bylaws : folders[s.folder];
+        return (
+          <FileList result={result} title={s.title} id={s.id} group={s.group}>
+            {s.id === "bylaws" && currentBylawsUrl !== undefined && (
+              <p>
+                <a href={currentBylawsUrl}>Current bylaws (PDF)</a>
+              </p>
+            )}
+          </FileList>
+        );
+      })
+    }
   </div>
 </Base>

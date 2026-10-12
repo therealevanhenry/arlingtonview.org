@@ -1,7 +1,7 @@
 ---
 import { groupByPath, groupByYear, visibleFiles } from "../lib/archive";
 import type { DriveFile, FolderResult } from "../lib/drive";
-import { formatArchiveDate, formatCalendarDate } from "../lib/time";
+import { formatFileDate } from "../lib/time";
 import FolderFallback from "./FolderFallback.astro";
 
 interface Props {
@@ -27,10 +27,6 @@ const sections: Section[] = !result.ok
       : [{ label: "", files: visibleFiles(result.files) }];
 const nonEmpty = sections.filter((s) => s.files.length > 0);
 
-const dateOf = (f: DriveFile): { text: string; iso: string } =>
-  f.meetingDate !== undefined
-    ? { text: formatArchiveDate(f.meetingDate, f.approximate === true), iso: f.meetingDate }
-    : { text: formatCalendarDate(new Date(f.modifiedTime)), iso: f.modifiedTime };
 ---
 
 <section id={id} class="stack" aria-labelledby={`${id}-title`}>
@@ -43,17 +39,19 @@ const dateOf = (f: DriveFile): { text: string; iso: string } =>
       <>
         {nonEmpty.length === 0 && <p>Nothing posted yet.</p>}
         {nonEmpty.map((s) => (
-          <div class="stack">
+          <div class="stack file-group">
             {s.label !== "" && <SubHeading>{s.label}</SubHeading>}
             <ul class="files" role="list">
               {s.files.map((f) => {
-                const d = dateOf(f);
+                const d = formatFileDate(f);
                 return (
                   <li class="file">
                     <a href={f.url}>{f.name}</a>
-                    <time class="file-date" datetime={d.iso}>
-                      {d.text}
-                    </time>
+                    {d && (
+                      <time class="file-date" datetime={d.datetime}>
+                        {d.text}
+                      </time>
+                    )}
                   </li>
                 );
               })}

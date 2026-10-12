@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   formatArchiveDate,
   formatCalendarDate,
+  formatFileDate,
+  formatModifiedDate,
   formatMeetingDate,
   formatMeetingMonthDay,
   formatMeetingRange,
@@ -114,5 +116,30 @@ describe("formatArchiveDate", () => {
   it("formats an exact date and a month-only date", () => {
     expect(formatArchiveDate("2026-06-24")).toBe("June 24, 2026");
     expect(formatArchiveDate("2023-04-01", true)).toBe("April 2023");
+  });
+});
+
+describe("formatFileDate", () => {
+  const base = { id: "1", name: "x", mimeType: "a", url: "u", isFolder: false, path: [] as string[] };
+
+  it("uses the parsed meeting date, with a full-date datetime when exact", () => {
+    const f = { ...base, modifiedTime: "2026-01-01T00:00:00Z", meetingDate: "2026-06-24", approximate: false };
+    expect(formatFileDate(f)).toEqual({ text: "June 24, 2026", datetime: "2026-06-24" });
+  });
+
+  it("gives an approximate date as month and year with a YYYY-MM datetime", () => {
+    const f = { ...base, modifiedTime: "2026-01-01T00:00:00Z", meetingDate: "2023-04-01", approximate: true };
+    expect(formatFileDate(f)).toEqual({ text: "April 2023", datetime: "2023-04" });
+  });
+
+  it("falls back to the New York modified date", () => {
+    const f = { ...base, modifiedTime: "2026-10-07T02:30:00Z" };
+    expect(formatFileDate(f)).toEqual({ text: "October 6, 2026", datetime: "2026-10-07T02:30:00Z" });
+  });
+
+  it("returns undefined for an invalid timestamp instead of throwing", () => {
+    expect(formatFileDate({ ...base, modifiedTime: "not a date" })).toBeUndefined();
+    expect(formatFileDate({ ...base, modifiedTime: "" })).toBeUndefined();
+    expect(formatModifiedDate({ ...base, modifiedTime: "garbage" })).toBeUndefined();
   });
 });

@@ -23,7 +23,7 @@ const past = pastRows(rows, now);
   <div class="sections">
     <section class="stack">
       <h1>Meetings</h1>
-      <p class="measure">{settings.meetingRule}</p>
+      <p class="lead">{settings.meetingRule}</p>
       <p class="measure">
         {settings.virtualLinkNote} <a href={`mailto:${settings.contactEmail}`}>{settings.contactEmail}</a>
       </p>
@@ -55,7 +55,10 @@ const past = pastRows(rows, now);
             <a href={folders.meetings.folderUrl}>Open folder in Google Drive</a>
           </p>
         ) : (
-          <FolderFallback folderUrl={folders.meetings.folderUrl} />
+          <FolderFallback
+            folderUrl={folders.meetings.folderUrl}
+            label={past.length > 0 ? "Agendas and minutes could not be loaded right now." : undefined}
+          />
         )
       }
     </section>

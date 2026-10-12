@@ -1,6 +1,6 @@
 ---
 import type { DriveFile } from "../lib/drive";
-import { formatCalendarDate } from "../lib/time";
+import { formatModifiedDate } from "../lib/time";
 
 interface Props {
   files: DriveFile[];
@@ -14,14 +14,19 @@ const { files } = Astro.props;
     <section class="stack" aria-labelledby="recently-added">
       <h2 id="recently-added">Recently added</h2>
       <ul class="files" role="list">
-        {files.map((f) => (
-          <li class="file">
-            <a href={f.url}>{f.name}</a>
-            <time class="file-date" datetime={f.modifiedTime}>
-              {formatCalendarDate(new Date(f.modifiedTime))}
-            </time>
-          </li>
-        ))}
+        {files.map((f) => {
+          const d = formatModifiedDate(f);
+          return (
+            <li class="file">
+              <a href={f.url}>{f.name}</a>
+              {d && (
+                <time class="file-date" datetime={d.datetime}>
+                  {d.text}
+                </time>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   )

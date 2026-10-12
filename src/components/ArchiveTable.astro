@@ -11,7 +11,7 @@ const { rows } = Astro.props;
 
 {
   rows.length > 0 && (
-    <table class="table" role="table">
+    <table class="table table-archive" role="table">
       <thead role="rowgroup">
         <tr role="row">
           <th role="columnheader" scope="col">Date</th>
@@ -24,7 +24,7 @@ const { rows } = Astro.props;
         {rows.map((r) => (
           <tr role="row">
             <td role="cell" data-label="Date">
-              {formatArchiveDate(r.date, r.approximate)}
+              <time datetime={r.approximate ? r.date.slice(0, 7) : r.date}>{formatArchiveDate(r.date, r.approximate)}</time>
               {r.approximate && " (month)"}
             </td>
             <td role="cell" data-label="Agenda">

@@ -1,13 +1,13 @@
 ---
 interface Props {
   folderUrl: string;
-  /** Link text; defaults to the one wording used site-wide. */
+  /** Replaces the default sentence, e.g. when a table above it is still populated. */
   label?: string;
 }
 
-const { folderUrl, label = "Open folder in Google Drive" } = Astro.props;
+const { folderUrl, label = "The file list is not available right now." } = Astro.props;
 ---
 
 <p>
-  The file list is not available right now. <a href={folderUrl}>{label}</a>
+  {label} <a href={folderUrl}>Open folder in Google Drive</a>
 </p>

@@ -1,3 +1,5 @@
+import type { DriveFile } from "./drive";
+
 const TIME_ZONE = "America/New_York";
 
 /** The only clock read in the calendar code. Everything else takes `now` as a parameter. */
@@ -75,4 +77,28 @@ export function formatArchiveDate(date: string, approximate = false): string {
     month: "long",
     ...(approximate ? {} : { day: "numeric" as const }),
   }).format(instant);
+}
+
+export type FileDate = { text: string; datetime: string };
+
+/** The New York modified date of a file; undefined when `modifiedTime` does not parse (never throws). */
+export function formatModifiedDate(file: DriveFile): FileDate | undefined {
+  const ms = Date.parse(file.modifiedTime);
+  if (Number.isNaN(ms)) return undefined;
+  return { text: formatCalendarDate(new Date(ms)), datetime: file.modifiedTime };
+}
+
+/**
+ * The date shown beside a file: the parsed meeting date (`<time>` value `YYYY-MM-DD`, or `YYYY-MM` when only
+ * the month is known), else the modified date. Undefined when neither is usable, so callers omit the date.
+ */
+export function formatFileDate(file: DriveFile): FileDate | undefined {
+  if (file.meetingDate !== undefined) {
+    const approximate = file.approximate === true;
+    return {
+      text: formatArchiveDate(file.meetingDate, approximate),
+      datetime: approximate ? file.meetingDate.slice(0, 7) : file.meetingDate,
+    };
+  }
+  return formatModifiedDate(file);
 }

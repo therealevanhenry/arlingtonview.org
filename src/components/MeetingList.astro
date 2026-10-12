@@ -2,7 +2,7 @@
 import type { ArchiveRow } from "../lib/archive";
 import { agendaFor } from "../lib/archive";
 import type { Meeting } from "../lib/calendar";
-import { formatMeetingRange } from "../lib/time";
+import { formatMeetingMonthDay, formatMeetingTime, formatMeetingWeekday, localDate } from "../lib/time";
 
 interface Props {
   meetings: Meeting[];
@@ -10,27 +10,40 @@ interface Props {
 }
 
 const { meetings, rows } = Astro.props;
+
+// One group per New York calendar year, in the order the meetings arrive (chronological).
+const groups: Array<{ year: string; meetings: Meeting[] }> = [];
+for (const m of meetings) {
+  const year = localDate(m.start).slice(0, 4);
+  const last = groups[groups.length - 1];
+  if (last?.year === year) last.meetings.push(m);
+  else groups.push({ year, meetings: [m] });
+}
 ---
 
 {
-  meetings.length > 0 && (
-    <ul class="stack" role="list">
-      {meetings.map((m) => {
-        const agenda = agendaFor(m, rows);
-        return (
-          <li class="stack">
-            <p>
-              <time datetime={m.start.toISOString()}>{formatMeetingRange(m.start, m.end)}</time>
-            </p>
-            <p>{m.isVirtual ? "Virtual meeting" : m.location}</p>
-            {agenda !== undefined && (
-              <p>
-                <a href={agenda}>Agenda</a>
+  groups.map((g) => (
+    <div class="stack">
+      <h3>{g.year}</h3>
+      <ol class="schedule" role="list">
+        {g.meetings.map((m) => {
+          const agenda = agendaFor(m, rows);
+          return (
+            <li class="schedule-item">
+              <p class="schedule-date">
+                <time datetime={m.start.toISOString()}>
+                  {formatMeetingWeekday(m.start)}, {formatMeetingMonthDay(m.start)}
+                </time>
               </p>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  )
+              <p class="schedule-details">
+                <span>{formatMeetingTime(m.start, m.end)}</span>
+                <span class="soft">{m.isVirtual ? "Virtual meeting" : m.location}</span>
+                {agenda !== undefined && <a href={agenda}>Agenda</a>}
+              </p>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  ))
 }

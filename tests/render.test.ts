@@ -77,6 +77,8 @@ const hrefs = (html: string): string[] => [...html.matchAll(/href="([^"]*)"/g)].
 const classTokens = (html: string): string[] =>
   [...html.matchAll(/\sclass="([^"]*)"/g)].flatMap((m) => m[1].split(/\s+/).filter((c) => c !== ""));
 
+const countOf = (html: string, needle: string): number => html.split(needle).length - 1;
+
 /** Text content with tags dropped and whitespace collapsed. */
 const textOf = (html: string): string => html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 
@@ -312,34 +314,82 @@ describe("MeetingList", () => {
     expect(html.trim()).toBe("");
   });
 
-  it("lists range, where, and the agenda from the archive rows", async () => {
-    const second: Meeting = {
-      ...sample,
-      uid: "b",
-      start: new Date("2026-10-27T23:00:00Z"),
-      end: new Date("2026-10-28T00:30:00Z"),
-      isVirtual: false,
-      location: "Library",
-      agendaUrl: undefined,
-    };
-    const rows = [
-      {
-        date: "2026-09-29",
-        approximate: false,
-        meeting: sample,
-        agenda: { id: "x", name: "Agenda.pdf", mimeType: "a", modifiedTime: "2026-09-01T00:00:00Z", url: "https://drive.google.com/file/d/x/view", isFolder: false, path: [] },
-        minutesDraft: false,
-        materials: [],
-      },
-    ];
-    const html = await container.renderToString(MeetingList, { props: { meetings: [sample, second], rows } });
-    expect(html).toContain("Tuesday, September 29, 2026, 7:00 to 8:30 pm");
-    expect(html).toContain('<time datetime="2026-09-29T23:00:00.000Z">Tuesday, September 29, 2026, 7:00 to 8:30 pm</time>');
-    expect(html).toContain('<time datetime="2026-10-27T23:00:00.000Z">');
+  const agendaRow = {
+    date: "2026-09-29",
+    approximate: false,
+    meeting: sample,
+    agenda: { id: "x", name: "Agenda.pdf", mimeType: "a", modifiedTime: "2026-09-01T00:00:00Z", url: "https://drive.google.com/file/d/x/view", isFolder: false, path: [] },
+    minutesDraft: false,
+    materials: [],
+  };
+  const second: Meeting = {
+    ...sample,
+    uid: "b",
+    start: new Date("2026-10-27T23:00:00Z"),
+    end: new Date("2026-10-28T00:30:00Z"),
+    isVirtual: false,
+    location: "Library",
+    agendaUrl: undefined,
+  };
+  const third: Meeting = {
+    ...sample,
+    uid: "c",
+    start: new Date("2027-01-19T00:00:00Z"),
+    end: new Date("2027-01-19T01:30:00Z"),
+    agendaUrl: undefined,
+  };
+
+  it("sets each meeting as a schedule item: date, then time, place, and the agenda link", async () => {
+    const html = await container.renderToString(MeetingList, { props: { meetings: [sample, second], rows: [agendaRow] } });
+    expect(html).toContain('<ol class="schedule"');
+    expect(classTokens(html).filter((c) => c === "schedule-item")).toHaveLength(2);
+    expect(html).toContain('<time datetime="2026-09-29T23:00:00.000Z"');
+    expect(html).toContain('<time datetime="2026-10-27T23:00:00.000Z"');
+    expect(html).toContain("7:00 to 8:30 pm");
     expect(html).toContain("Virtual meeting");
     expect(html).toContain("Library");
     expect(html).toContain("https://drive.google.com/file/d/x/view");
     expect((html.match(/>Agenda</g) ?? []).length).toBe(1);
+  });
+
+  it("prints the date as weekday and month-day with no year, and no separators in the details", async () => {
+    const html = await container.renderToString(MeetingList, { props: { meetings: [sample], rows: [] } });
+    const time = html.match(/<time[^>]*>([\s\S]*?)<\/time>/);
+    expect(time).not.toBeNull();
+    expect(textOf(time![1])).toBe("Tuesday, September 29");
+    const details = html.slice(html.indexOf("schedule-details"));
+    expect(textOf(details)).not.toMatch(/[,|\u00b7]/);
+  });
+
+  it("groups by New York year, in order, one h3 per year", async () => {
+    const html = await container.renderToString(MeetingList, { props: { meetings: [sample, second, third], rows: [] } });
+    const years = [...html.matchAll(/<h3[^>]*>(\d{4})<\/h3>/g)].map((m) => m[1]);
+    // 2027-01-19T00:00Z is still January 18 in New York: 2027 either way, but the group must exist once.
+    expect(years).toEqual(["2026", "2027"]);
+    expect(html.indexOf(">2026<")).toBeLessThan(html.indexOf("September 29"));
+    expect(html.indexOf("October 27")).toBeLessThan(html.indexOf(">2027<"));
+    expect(countOf(html, "<ol")).toBe(2);
+  });
+
+  it("puts a meeting late on December 31 in New York in that year's group", async () => {
+    const nye: Meeting = { ...sample, uid: "d", start: new Date("2027-01-01T02:00:00Z"), end: new Date("2027-01-01T03:30:00Z"), agendaUrl: undefined };
+    const html = await container.renderToString(MeetingList, { props: { meetings: [nye], rows: [] } });
+    expect(html).toMatch(/<h3[^>]*>2026<\/h3>/);
+    expect(textOf(html)).toContain("Thursday, December 31");
+  });
+
+  it("shows an agenda link only when one is available", async () => {
+    const html = await container.renderToString(MeetingList, { props: { meetings: [second], rows: [] } });
+    expect(html).not.toContain("Agenda");
+  });
+});
+
+describe("RecentFiles with a bad timestamp", () => {
+  it("lists the name and omits the date", async () => {
+    const f: DriveFile = { id: "1", name: "Odd.pdf", mimeType: "a", modifiedTime: "garbage", url: "https://d/1", isFolder: false, path: [] };
+    const html = await container.renderToString(RecentFiles, { props: { files: [f] } });
+    expect(html).toContain("Odd.pdf");
+    expect(html).not.toContain("<time");
   });
 });
 
@@ -405,7 +455,6 @@ const okResult = (id: string, files: DriveFile[]): FolderResult => ({ ok: true, 
 const downResult = (id: string): FolderResult => ({ ok: false, folderUrl: FOLDER_URL(id), reason: "HTTP 403" });
 const folderEntry = (name: string, path: string[] = []): DriveFile =>
   driveFile(name, path, { isFolder: true, mimeType: "application/vnd.google-apps.folder" });
-const countOf = (html: string, needle: string): number => html.split(needle).length - 1;
 
 describe("FolderFallback", () => {
   it("says the list is unavailable and links the folder", async () => {
@@ -501,7 +550,17 @@ describe("FileList", () => {
     expect(html).toContain("June 24, 2026");
     expect(html).toContain("June 2025");
     expect(html).not.toContain("June 1, 2025");
+    expect(html).toContain('datetime="2025-06"');
+    expect(html).not.toContain('datetime="2025-06-01"');
+    expect(html).toContain('datetime="2026-06-24"');
     expect(html).toContain("August 15, 2026");
+  });
+
+  it("omits the date, and does not throw, for an unparseable modified time", async () => {
+    const bad = driveFile("Plan summary", [], { modifiedTime: "garbage" });
+    const html = await container.renderToString(FileList, { props: { result: okResult("N", [bad]), title: "Plan", id: "plan" } });
+    expect(html).toContain("Plan summary</a>");
+    expect(html).not.toContain("<time");
   });
 
   it("shows Nothing posted yet. and the folder link for an empty ok result", async () => {
@@ -546,6 +605,7 @@ describe("ArchiveTable", () => {
   it("shows month and year with a (month) marker for approximate dates", async () => {
     const html = await render([{ ...base, date: "2023-04-01", approximate: true }]);
     expect(textOf(html)).toContain("April 2023 (month)");
+    expect(html).toContain('<time datetime="2023-04">');
     expect(html).not.toContain("April 1, 2023");
   });
 
@@ -592,7 +652,8 @@ describe("meetings page", () => {
     expect(html).toContain(settings.virtualLinkNote);
     expect(html).toContain(`href="mailto:${settings.contactEmail}"`);
     expect(html).toMatch(/<h2[^>]*>Upcoming meetings<\/h2>/);
-    expect(html).toContain("September 29, 2026");
+    expect(html).toMatch(/<h3[^>]*>2026<\/h3>/);
+    expect(textOf(html)).toContain("Tuesday, September 29");
     expect(html).toContain("Subscribe to calendar");
     expect(html).toContain("Calendar file (ICS)");
     expect(html).toMatch(/<h2 id="past"[^>]*>Past meetings<\/h2>/);
@@ -641,15 +702,44 @@ describe("meetings page", () => {
     expect(html).toContain("June 24, 2026");
     expect(html).toContain(">Agenda</a>");
     expect(html).not.toContain("(OLD)");
-    expect(html).not.toContain("September 29, 2026</td>");
+    const rowDates = [...html.matchAll(/data-label="Date"[^>]*>([\s\S]*?)<\/td>/g)].map((m) => textOf(m[1]));
+    expect(rowDates).toEqual(["June 24, 2026"]);
     expect(html).toContain(`<a href="${FOLDER_URL("19POeuA29OJnWSE4oLLrT3bXyaVsmB298")}">Open folder in Google Drive</a>`);
     expect(html).not.toContain("The file list is not available");
+  });
+
+  it("keeps the past table and swaps in a specific sentence when the meetings folder is down", async () => {
+    const past: Meeting = { ...sample, uid: "past3", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z"), agendaUrl: undefined };
+    const folders = { bylaws: downResult("b"), meetings: downResult("m"), presentations: okResult("p", []), letters: downResult("l"), neighborhoodPlan: downResult("n") };
+    const html = main(await render([past], { folders }));
+    expect(html).toContain('role="table"');
+    expect(textOf(html)).toContain("Agendas and minutes could not be loaded right now.");
+    expect(html).not.toContain("The file list is not available");
+    expect(countOf(html, "Open folder in Google Drive")).toBe(1);
+    expect(countOf(html, FOLDER_URL("m"))).toBe(1);
+  });
+
+  it("sets the rule as the lead and the virtual note as body text in a measure", async () => {
+    const html = main(await render([upcomingOne]));
+    expect(html).toMatch(new RegExp(`<p class="lead">\\s*${settings.meetingRule.replace(/[.]/g, "\\.")}\\s*</p>`));
+    expect(html).toMatch(/<p class="measure">\s*The virtual meeting link/);
+    expect(html.indexOf('class="lead"')).toBeLessThan(html.indexOf("The virtual meeting link"));
+  });
+
+  it("constrains the past table with the archive modifier", async () => {
+    const past: Meeting = { ...sample, uid: "past4", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z"), agendaUrl: undefined };
+    const folders = { bylaws: downResult("b"), meetings: okResult("m", []), presentations: okResult("p", []), letters: downResult("l"), neighborhoodPlan: downResult("n") };
+    const html = await render([past], { folders });
+    expect(classTokens(html)).toContain("table-archive");
   });
 
   it("prints nothing from a past meeting beyond date, time, place, and the agenda link", async () => {
     const past: Meeting = { ...sample, uid: "past2", title: "SECRET TITLE", description: "SECRET DESCRIPTION", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z") } as Meeting;
     const folders = { bylaws: downResult("b"), meetings: okResult("m", []), presentations: okResult("p", []), letters: downResult("l"), neighborhoodPlan: downResult("n") };
     const html = await render([past], { folders });
+    // The past row must exist, or the absence check below proves nothing.
+    expect(html).toContain('role="table"');
+    expect(html).toContain("June 24, 2026");
     expect(html).not.toContain("SECRET");
   });
 });
@@ -685,6 +775,13 @@ describe("documents page", () => {
     );
     for (const id of ids) expect(html).toContain(`href="#${id}"`);
     expect(html.indexOf('href="#bylaws"')).toBeLessThan(html.indexOf('<section id="bylaws"'));
+    // One wrapping row of links, not a vertical list.
+    const nav = html.match(/<nav[^>]*>([\s\S]*?)<\/nav>/);
+    expect(nav).not.toBeNull();
+    expect(nav![0]).toContain('class="actions"');
+    expect(nav![0]).not.toContain("<ul");
+    expect(hrefs(nav![1])).toEqual(ids.map((id) => `#${id}`));
+    expect([...nav![1].matchAll(/<a[^>]*>([^<]*)<\/a>/g)].map((m) => m[1])).toEqual(headings);
   });
 
   it("renders folders shaped like the owner's Drive", async () => {
@@ -721,6 +818,8 @@ describe("documents page", () => {
     expect(html).toContain("AVCA 2026 Sep mtg mins (draft)</a>");
     expect(html).not.toContain("(OLD)");
     expect(html).toContain("Zoning deck 2026-03-03</a>");
+    // Every rendered list sits in a group capped at a readable width.
+    expect(classTokens(html).filter((c) => c === "file-group").length).toBe(countOf(html, '<ul class="files"'));
     expect(html).toContain("Statement of Neutrality S Pierce Street Discussions.pdf</a>");
     expect(html).toContain("Neighborhood Conservation Plan.pdf</a>");
     expect(countOf(html, "Open folder in Google Drive")).toBe(5);

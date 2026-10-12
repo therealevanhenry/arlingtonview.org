@@ -542,6 +542,59 @@ a:hover {
   white-space: nowrap;
 }
 
+/* A file list capped at a readable width (Documents sections). */
+.file-group {
+  max-width: 44rem;
+}
+
+/* ---------- Meeting schedule ---------- */
+
+.schedule {
+  max-width: 44rem;
+  padding: 0;
+  list-style: none;
+}
+
+.schedule-item {
+  padding-block: var(--space-4);
+  border-block-start: 1px solid var(--rule);
+}
+
+.schedule-item:first-child {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+
+.schedule-date {
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  font-weight: 500;
+  font-variant-numeric: lining-nums;
+  line-height: var(--leading-heading);
+  color: var(--ink);
+}
+
+.schedule-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-4);
+  margin-block-start: var(--space-1);
+}
+
+@media (min-width: 40rem) {
+  .schedule-item {
+    display: grid;
+    grid-template-columns: minmax(14rem, 18rem) 1fr;
+    align-items: baseline;
+    column-gap: var(--space-5);
+  }
+
+  .schedule-details {
+    margin-block-start: 0;
+  }
+}
+
 /* ---------- Tables ---------- */
 
 /* Secondary text in the soft ink, e.g. "Not posted" in a table cell. */
@@ -565,6 +618,15 @@ a:hover {
 
 .table :where(th) {
   font-weight: 600;
+}
+
+/* The past-meetings table: four short columns do not need the whole container. Date, Agenda, and Minutes stay on one line; Materials takes the slack and wraps. */
+.table-archive {
+  max-width: 52rem;
+}
+
+.table-archive :where(td:nth-child(-n + 3)) {
+  white-space: nowrap;
 }
 
 /* Phones: each row restacks as a block, labelled from td[data-label]. Never a horizontal scroll. */
