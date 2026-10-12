@@ -350,18 +350,6 @@ a:hover {
   inset-inline: calc(-1 * var(--cornice-overhang));
   height: var(--cornice-height);
   padding-block-end: var(--cornice-gap);
-  /*
-   * Inset the course so it begins and ends on a whole tooth: half of what is left over after fitting
-   * whole pitches, floored to a pixel so every tooth stays on the pixel grid. The same inset on both
-   * sides leaves under 2px spare after the last tooth, which absorbs a fractional container width
-   * without clipping that tooth or letting a sliver of the next one in. Without mod() and round()
-   * the declaration drops and the course simply runs from the left edge.
-   */
-  padding-inline: round(
-    down,
-    mod(100% + 2 * var(--cornice-overhang) - var(--dentil-width), var(--dentil-pitch)) / 2,
-    1px
-  );
   border-block-start: var(--cornice-crown) solid var(--indigo);
   border-block-end: var(--cornice-fascia) solid var(--indigo);
   background-image: linear-gradient(to right, var(--indigo) var(--dentil-width), transparent var(--dentil-width));
@@ -369,6 +357,26 @@ a:hover {
   background-repeat: repeat-x;
   background-origin: content-box;
   background-clip: content-box;
+}
+
+/*
+ * Inset the course so it begins and ends on a whole tooth: half of what is left over after fitting
+ * whole pitches, floored to a pixel so every tooth stays on the pixel grid. The same inset on both
+ * sides leaves under 2px spare after the last tooth, which absorbs a fractional container width
+ * without clipping that tooth or letting a sliver of the next one in.
+ *
+ * Guarded, not left to fail: a declaration containing var() is never dropped at parse time, so the
+ * guard is what makes the fallback explicit. Without mod() and round() the inset stays 0 and the
+ * course runs from the left edge, which can leave a part tooth at the right end.
+ */
+@supports (padding-inline: round(down, mod(100% - 1px, 2px) / 2, 1px)) {
+  .cornice::before {
+    padding-inline: round(
+      down,
+      mod(100% + 2 * var(--cornice-overhang) - var(--dentil-width), var(--dentil-pitch)) / 2,
+      1px
+    );
+  }
 }
 
 /* ---------- Meeting notice (home hero) ---------- */
@@ -390,11 +398,6 @@ a:hover {
   font-size: var(--step-1);
 }
 
-/* A size container, so the month and day can be capped by the width of their own column. */
-.notice-date {
-  container-type: inline-size;
-}
-
 .notice-weekday,
 .notice-monthday {
   display: block;
@@ -409,21 +412,38 @@ a:hover {
 }
 
 /*
- * One line, always. The widest dates (the two-digit days of November, then September) are 5.15em
- * wide at this tracking, so 19.2% of the column is the largest size at which every date fits with a
- * little to spare; --step-hero applies wherever the column has room for it. The two negative margins
- * are optical: one closes the lockup up under the weekday, the other pulls the round and
- * loose-fitting capitals (O, S) out toward the left edge the weekday sets.
+ * One line, always, at --step-hero unless the cap below applies. The two negative margins are
+ * optical: one closes the lockup up under the weekday, the other pulls the round and loose-fitting
+ * capitals (O, S) out toward the left edge the weekday sets.
  */
 .notice-monthday {
   margin-block-start: -0.05em;
   margin-inline-start: -0.02em;
   font-size: var(--step-hero);
-  font-size: min(var(--step-hero), 19.2cqi);
   font-weight: 400;
   line-height: 0.95;
   letter-spacing: -0.01em;
   white-space: nowrap;
+}
+
+/*
+ * Cap the month and day by the width of their own column. The widest dates (the two-digit days of
+ * November, then September) are 5.15em wide at this tracking, so 19.2% of the column is the largest
+ * size at which every date fits with a little to spare.
+ *
+ * Guarded, not left to fail: a declaration containing var() is never dropped at parse time, so an
+ * unguarded cqi value would compute to the inherited body size. Without container units the date
+ * keeps --step-hero alone, which overflows its line for the longest dates on a 320px phone and in
+ * the two-column layout.
+ */
+@supports (width: 1cqi) {
+  .notice-date {
+    container-type: inline-size;
+  }
+
+  .notice-monthday {
+    font-size: min(var(--step-hero), 19.2cqi);
+  }
 }
 
 /* The fallback lead: the standing meeting rule, in place of the date. */

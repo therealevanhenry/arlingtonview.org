@@ -134,8 +134,10 @@ the building and not as a border.
 - The course always begins and ends on a whole tooth. `padding-inline` on the pseudo-element is half of
   what is left over after fitting whole pitches (`mod()`), floored to a whole pixel (`round()`), so every
   tooth sits on the pixel grid and the inset differs by under 2px between the two ends, at any container
-  width. Where `mod()` and `round()` are unsupported the declaration drops and the course starts at the
-  left edge, which can leave a part tooth at the right end.
+  width. The declaration sits inside `@supports`, because a declaration containing `var()` is never
+  dropped at parse time and so cannot serve as its own fallback. Where `mod()` and `round()` are
+  unsupported the inset stays 0 and the course starts at the left edge, which can leave a part tooth at
+  the right end.
 - The projection is smaller than the page gutter at every width (16px minimum), so it never causes a
   horizontal scroll.
 - `.cornice` sets `position: relative` and expects the block to leave `--cornice-height` of extra top
@@ -154,10 +156,15 @@ a lockup the type carries. It is the one bold thing on the page; everything arou
   `--step-2`. The month and day (`.notice-monthday`) are Garamond 400 at `--step-hero`, line height 0.95,
   `letter-spacing: -0.01em`, lining figures, never wrapping. The year is not shown; the full date with the
   year appears wherever `formatMeetingRange` or `formatMeetingDate` is used.
-- The month and day never overflow. `.notice-date` is an inline-size container and the font size is
-  `min(var(--step-hero), 19.2cqi)`: the widest dates (the two-digit days of November, then September)
-  measure 5.15em at this tracking, so 19.2% of the column is the largest size at which every date fits on
-  one line. In practice the cap applies in the two-column layout and on phones narrower than about 350px.
+- The month and day are capped by their column so they never overflow. Inside `@supports (width: 1cqi)`,
+  `.notice-date` is an inline-size container and the font size is `min(var(--step-hero), 19.2cqi)`: the
+  widest dates (the two-digit days of November, then September) measure 5.15em at this tracking, so 19.2%
+  of the column is the largest size at which every date fits on one line. In practice the cap applies in
+  the two-column layout and on phones narrower than about 350px.
+- Without container units the guard is skipped and the date keeps `--step-hero` alone. That is the honest
+  degradation: the longest dates then overflow their line on a 320px phone and run past the column in
+  the two-column layout. The guard is required; unguarded, the `cqi` declaration would be invalid at
+  computed-value time and the date would fall to the inherited body size.
 - Two optical corrections on the month and day: `margin-block-start: -0.05em` closes the lockup up under
   the weekday, and `margin-inline-start: -0.02em` brings the round capitals (O, S) out to the left edge
   the weekday sets.
