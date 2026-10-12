@@ -194,7 +194,7 @@ describe("NextMeeting", () => {
     const right = html.slice(details);
     // When and where: the lockup, then the time of day and the place.
     expect(left).toContain("</time>");
-    expect(left).toMatch(/<p class="notice-time">7:00 to 8:30 pm<\/p>\s*<p>Virtual meeting<\/p>/);
+    expect(left).toMatch(/<p class="notice-time">7:00 to 8:30 pm<\/p>\s*<p class="notice-place">Virtual meeting<\/p>/);
     expect(left).not.toContain(settings.virtualLinkNote);
     expect(left).not.toContain("Agenda");
     expect(left).not.toContain('class="actions"');
@@ -221,7 +221,7 @@ describe("NextMeeting", () => {
     const details = html.indexOf('class="notice-details');
     const left = html.slice(html.indexOf('class="notice-when"'), details);
     const right = html.slice(details);
-    expect(left).toMatch(/<p class="notice-time">7:00 to 8:30 pm<\/p>\s*<p>Arlington View Community Center<\/p>/);
+    expect(left).toMatch(/<p class="notice-time">7:00 to 8:30 pm<\/p>\s*<p class="notice-place">Arlington View Community Center<\/p>/);
     expect(right).toMatch(/^class="notice-details[^"]*">\s*<div class="actions">/);
     expect(right).not.toContain("notice-meta");
     expect(right).not.toContain("mailto:");
@@ -280,6 +280,12 @@ describe("NextMeeting", () => {
     const ignored = await container.renderToString(NextMeeting, { props: { meeting: stray, settings } });
     expect(ignored).not.toContain("Agenda");
     expect(ignored).not.toContain("unvetted");
+  });
+
+  it("sets the agenda link in its own paragraph, after the note, with the class that spaces it from the contact link", async () => {
+    const html = await container.renderToString(NextMeeting, { props: { meeting: sample, settings, agendaUrl: AGENDA } });
+    expect(html).toMatch(new RegExp(`<p class="notice-note">[\\s\\S]*?</p>\\s*<p class="notice-agenda">\\s*<a href="${AGENDA}">Agenda</a>\\s*</p>`));
+    expect(classTokens(html).filter((c) => c === "notice-agenda")).toHaveLength(1);
   });
 
   it("shows the venue AND the virtual-link note for a hybrid meeting", async () => {
@@ -405,7 +411,7 @@ describe("MeetingList", () => {
     expect(html).toContain("7:00 to 8:30 pm");
     expect(html).toContain("Virtual meeting");
     expect(html).toContain("Library");
-    expect(html).toContain("https://drive.google.com/file/d/x/view");
+    expect(html).toContain('<a href="https://drive.google.com/file/d/x/view">Agenda<span class="visually-hidden">, Tuesday, September 29</span></a>');
     expect((html.match(/>Agenda</g) ?? []).length).toBe(1);
   });
 
@@ -523,11 +529,15 @@ const downResult = (id: string): FolderResult => ({ ok: false, folderUrl: FOLDER
 const folderEntry = (name: string, path: string[] = []): DriveFile =>
   driveFile(name, path, { isFolder: true, mimeType: "application/vnd.google-apps.folder" });
 
+/** The folder link as rendered: the visible text, then the section name for screen readers only. */
+const folderLink = (url: string, section: string): string =>
+  `<a href="${url}">Open folder in Google Drive<span class="visually-hidden">, ${section}</span></a>`;
+
 describe("FolderFallback", () => {
-  it("says the list is unavailable and links the folder", async () => {
-    const html = await container.renderToString(FolderFallback, { props: { folderUrl: FOLDER_URL("X") } });
+  it("says the list is unavailable and links the folder, naming the section for screen readers", async () => {
+    const html = await container.renderToString(FolderFallback, { props: { folderUrl: FOLDER_URL("X"), section: "Official letters" } });
     expect(textOf(html)).toContain("The file list is not available right now.");
-    expect(html).toContain(`<a href="${FOLDER_URL("X")}">Open folder in Google Drive</a>`);
+    expect(html).toContain(folderLink(FOLDER_URL("X"), "Official letters"));
   });
 });
 
@@ -535,8 +545,7 @@ describe("FileList", () => {
   it("renders fallback with folder link on ok:false", async () => {
     const result: FolderResult = { ok: false, folderUrl: "https://drive.google.com/drive/folders/X", reason: "403" };
     const html = await container.renderToString(FileList, { props: { result, title: "Minutes", id: "minutes" } });
-    expect(html).toContain("Open folder in Google Drive");
-    expect(html).toContain("folders/X");
+    expect(html).toContain(folderLink("https://drive.google.com/drive/folders/X", "Minutes"));
     expect(countOf(html, "folders/X")).toBe(1);
     expect(html).toContain('<section id="minutes"');
     expect(html).toMatch(/<h2[^>]*>Minutes<\/h2>/);
@@ -566,6 +575,7 @@ describe("FileList", () => {
     expect(html).not.toContain("(OLD)");
     expect(html).not.toMatch(/>2026-2027<\/a>/);
     expect(countOf(html, "Open folder in Google Drive")).toBe(1);
+    expect(html).toContain(folderLink(FOLDER_URL("M"), "Minutes and agendas"));
     expect(html.lastIndexOf("Open folder in Google Drive")).toBeGreaterThan(html.lastIndexOf("</ul>"));
   });
 
@@ -657,15 +667,43 @@ describe("ArchiveTable", () => {
     const html = await render([{ ...base, agenda, minutes }]);
     for (const col of ["Date", "Agenda", "Minutes", "Materials"]) expect(html).toMatch(new RegExp(`<th[^>]*>${col}</th>`));
     expect(html).toContain("June 24, 2026");
-    expect(html).toContain(`<a href="${agenda.url}">Agenda</a>`);
-    expect(html).toContain(`<a href="${minutes.url}">Minutes</a>`);
+    expect(html).toContain(`<a href="${agenda.url}">Agenda<span class="visually-hidden">, June 24, 2026</span></a>`);
+    expect(html).toContain(`<a href="${minutes.url}">Minutes<span class="visually-hidden">, June 24, 2026</span></a>`);
     expect(html).not.toContain("(draft)");
     expect(html).not.toContain("Not posted");
   });
 
-  it("marks draft minutes", async () => {
+  it("marks draft minutes, outside the link, after the hidden date", async () => {
     const html = await render([{ ...base, minutes, minutesDraft: true }]);
-    expect(textOf(html)).toContain("Minutes (draft)");
+    expect(html).toMatch(new RegExp(`<a href="${minutes.url}">Minutes<span class="visually-hidden">, June 24, 2026</span></a>\\s*\\(draft\\)`));
+    // What is drawn (the hidden span removed) still reads "Minutes (draft)".
+    expect(textOf(html.replace(/<span class="visually-hidden">[^<]*<\/span>/g, ""))).toContain("Minutes (draft)");
+  });
+
+  it("gives every repeated link in the table a different accessible name: the row's date", async () => {
+    const rows: ArchiveRow[] = [
+      { ...base, agenda, minutes },
+      { ...base, date: "2026-05-27", agenda: driveFile("AVCA Proposed Agenda 05.27.2026"), minutes: driveFile("AVCA 2026 May mtg mins"), minutesDraft: true },
+      { ...base, date: "2023-04-01", approximate: true, minutes: driveFile("AVCA 2023 Apr mtg mins") },
+    ];
+    const html = await render(rows);
+    const names = [...html.matchAll(/<a href="[^"]*">((?:Agenda|Minutes)<span class="visually-hidden">[^<]*<\/span>)<\/a>/g)].map((m) => textOf(m[1]));
+    expect(names).toEqual(["Agenda, June 24, 2026", "Minutes, June 24, 2026", "Agenda, May 27, 2026", "Minutes, May 27, 2026", "Minutes, April 2023"]);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("makes the date cell the row header, still labelled for the stacked layout", async () => {
+    const html = await render([{ ...base, agenda }, { ...base, date: "2026-05-26" }]);
+    const headers = [...html.matchAll(/<th\b[^>]*scope="row"[^>]*>([\s\S]*?)<\/th>/g)];
+    expect(headers.map((m) => textOf(m[1]))).toEqual(["June 24, 2026", "May 26, 2026"]);
+    for (const [tag] of headers) {
+      expect(tag).toContain('role="rowheader"');
+      expect(tag).toContain('data-label="Date"');
+      expect(tag).toContain("<time datetime=");
+    }
+    // The first cell of every body row, and only that cell.
+    const bodyRows = [...html.slice(html.indexOf("<tbody")).matchAll(/<tr\b[^>]*>\s*<(th|td)\b/g)].map((m) => m[1]);
+    expect(bodyRows).toEqual(["th", "th"]);
   });
 
   it("says Not posted when agenda or minutes are missing and the folder was read", async () => {
@@ -705,7 +743,7 @@ describe("ArchiveTable", () => {
   it("labels every td and carries table roles", async () => {
     const html = await render([{ ...base, agenda }, { ...base, date: "2026-05-26" }]);
     const tds = [...html.matchAll(/<td\b[^>]*>/g)].map((m) => m[0]);
-    expect(tds).toHaveLength(8);
+    expect(tds).toHaveLength(6); // Agenda, Minutes, Materials per row; the date is the row header
     for (const td of tds) {
       expect(td).toContain("data-label=");
       expect(td).toContain('role="cell"');
@@ -714,6 +752,7 @@ describe("ArchiveTable", () => {
     expect(html).toContain('role="rowgroup"');
     expect(html).toContain('role="row"');
     expect(html).toContain('role="columnheader"');
+    expect(countOf(html, 'role="rowheader"')).toBe(2);
   });
 });
 
@@ -740,8 +779,7 @@ describe("meetings page", () => {
     expect(html).toContain("Calendar file (ICS)");
     expect(html).toMatch(/<h2 id="past"[^>]*>Past meetings<\/h2>/);
     expect(html).toContain("The file list is not available right now.");
-    expect(html).toContain("Open folder in Google Drive");
-    expect(html).toContain("https://example.test/f");
+    expect(html).toContain(folderLink("https://example.test/f", "Minutes and agendas"));
     expect(html).not.toContain("meet.google.com");
     expect(html).not.toContain("<table");
   });
@@ -782,11 +820,11 @@ describe("meetings page", () => {
     const html = main(await render([past, upcomingOne], { folders }));
     expect(html).toContain('role="table"');
     expect(html).toContain("June 24, 2026");
-    expect(html).toContain(">Agenda</a>");
+    expect(html).toMatch(/>Agenda<span class="visually-hidden">, June 24, 2026<\/span><\/a>/);
     expect(html).not.toContain("(OLD)");
-    const rowDates = [...html.matchAll(/data-label="Date"[^>]*>([\s\S]*?)<\/td>/g)].map((m) => textOf(m[1]));
+    const rowDates = [...html.matchAll(/data-label="Date"[^>]*>([\s\S]*?)<\/th>/g)].map((m) => textOf(m[1]));
     expect(rowDates).toEqual(["June 24, 2026"]);
-    expect(html).toContain(`<a href="${FOLDER_URL("19POeuA29OJnWSE4oLLrT3bXyaVsmB298")}">Open folder in Google Drive</a>`);
+    expect(html).toContain(folderLink(FOLDER_URL("19POeuA29OJnWSE4oLLrT3bXyaVsmB298"), "Minutes and agendas"));
     expect(html).not.toContain("The file list is not available");
     // The folder was read, so a missing file is a fact.
     expect(countOf(html, "Not posted")).toBe(1);
@@ -851,6 +889,7 @@ describe("documents page", () => {
     expect(at.every((i) => i >= 0)).toBe(true);
     expect(at).toEqual([...at].sort((a, b) => a - b));
     expect(countOf(html, "Open folder in Google Drive")).toBe(5);
+    for (const heading of headings) expect(html, heading).toContain(folderLink("https://example.test/f", heading));
     expect(countOf(html, "The file list is not available right now.")).toBe(5);
     expect(html).not.toMatch(/survey/i);
     expect(html).not.toContain("<table");
@@ -911,6 +950,8 @@ describe("documents page", () => {
     expect(html).toContain("Statement of Neutrality S Pierce Street Discussions.pdf</a>");
     expect(html).toContain("Neighborhood Conservation Plan.pdf</a>");
     expect(countOf(html, "Open folder in Google Drive")).toBe(5);
+    const linkNames = [...html.matchAll(/Open folder in Google Drive<span class="visually-hidden">, ([^<]*)<\/span>/g)].map((m) => m[1]);
+    expect(linkNames).toEqual(headings);
     expect(countOf(html, "not available right now")).toBe(0);
     expect(html).not.toMatch(/survey/i);
   });

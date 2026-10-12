@@ -1,13 +1,16 @@
 ---
 interface Props {
   folderUrl: string;
+  /** The section the folder belongs to. Read out after the link text, so the five links on Documents differ. */
+  section: string;
   /** Replaces the default sentence, e.g. when a table above it is still populated. */
   label?: string;
 }
 
-const { folderUrl, label = "The file list is not available right now." } = Astro.props;
+const { folderUrl, section, label = "The file list is not available right now." } = Astro.props;
 ---
 
 <p>
-  {label} <a href={folderUrl}>Open folder in Google Drive</a>
+  {label}{" "}
+  <a href={folderUrl}>Open folder in Google Drive<span class="visually-hidden">, {section}</span></a>
 </p>

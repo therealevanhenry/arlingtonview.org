@@ -52,11 +52,12 @@ const past = pastRows(rows, now);
       {
         folders.meetings.ok ? (
           <p>
-            <a href={folders.meetings.folderUrl}>Open folder in Google Drive</a>
+            <a href={folders.meetings.folderUrl}>Open folder in Google Drive<span class="visually-hidden">, Minutes and agendas</span></a>
           </p>
         ) : (
           <FolderFallback
             folderUrl={folders.meetings.folderUrl}
+            section="Minutes and agendas"
             label={past.length > 0 ? "Agendas and minutes could not be loaded right now." : undefined}
           />
         )

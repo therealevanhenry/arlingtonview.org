@@ -21,7 +21,7 @@ type Props =
 
 const DEFAULT_DESCRIPTION =
   "Arlington View Civic Association (AVCA): meeting dates, minutes, bylaws, and county resources for the Arlington View neighborhood of Arlington, Virginia.";
-const { contactEmail, siteName } = await getSettings();
+const { contactEmail, siteName, siteUrl } = await getSettings();
 
 const { title, home = false, description = DEFAULT_DESCRIPTION, lastUpdated } = Astro.props;
 
@@ -30,6 +30,11 @@ const pageTitle = home || title === undefined ? siteName : `${title} | ${siteNam
 const canonical = Astro.site
   ? new URL(withBase(stripBase(Astro.url.pathname)), Astro.site).href
   : undefined;
+// Only the canonical site may be indexed. A build for any other origin (the github.io preview, where
+// the deploy workflow passes the origin GitHub Pages reports) says noindex, so the preview never
+// competes with the real address in search results. `siteUrl`, `site` in astro.config.mjs, and
+// public/CNAME must agree (tests/site-identity.test.ts), so a local or apex build is indexable.
+const indexable = Astro.site !== undefined && Astro.site.origin === new URL(siteUrl).origin;
 ---
 
 <!doctype html>
@@ -40,6 +45,7 @@ const canonical = Astro.site
     <title>{pageTitle}</title>
     <meta name="description" content={description} />
     {canonical && <link rel="canonical" href={canonical} />}
+    {!indexable && <meta name="robots" content="noindex" />}
     <link rel="icon" href={withBase("/favicon.ico")} sizes="32x32" />
     <link rel="icon" href={withBase("/favicon.svg")} type="image/svg+xml" />
     <link rel="preload" href={sourceSans400} as="font" type="font/woff2" crossorigin />

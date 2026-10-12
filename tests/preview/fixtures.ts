@@ -52,6 +52,18 @@ const MONTH = [
 ];
 const pad = (x: number): string => String(x).padStart(2, "0");
 
+/** A name with no break opportunity (no space or hyphen), at least `min` characters: the worst case for a phone. */
+function unbroken(text: string, min: number): string {
+  if (text.length < min || /[\s-]/.test(text)) throw new Error(`fixture "${text}" must be ${min}+ characters with no space or hyphen`);
+  return text;
+}
+/** A real file name from the owner's Drive (Bylaws > Proposed Amendments): 43 characters, unbreakable. */
+export const LONG_REAL_NAME = unbroken("AVCA_Article_V_Section_1_proposed_amendment", 43);
+/** Exactly 60 characters, unbreakable; a material on the August 2025 meeting row. */
+export const LONG_MATERIAL_NAME = unbroken("Traffic_Calming_Study_Appendix_B_Speed_And_Volume_Counts_v02", 60);
+/** A location pasted as one unbroken string: the home notice's place line and the schedule's place text. */
+export const LONG_LOCATION = unbroken("Carver_Community_Center_Multipurpose_Room_East_Entrance_Second_Floor", 60);
+
 /** Sequential, obviously fake Drive IDs, restarted per build so previews are byte-stable. */
 function idMaker(): () => string {
   let n = 0;
@@ -138,8 +150,9 @@ function archive(nextId: () => string): { past: Meeting[]; files: DriveFile[] } 
   files.push(file(nextId, "Scans to sort", ["2024-2025"], { isFolder: true, mimeType: "application/vnd.google-apps.folder" }));
   // An agenda for a meeting that has not happened yet, with no minutes.
   files.push(file(nextId, "AVCA Monthly Meeting Proposed Agenda - October 27, 2026", ["2026-2027", "26 10 October"]));
-  // A material on the August 2025 row.
+  // Materials on the August 2025 row; the second has a long name with no break opportunity.
   files.push(file(nextId, "AVCA 2025 Aug special session notes", ["2024-2025", "25 08 August"]));
+  files.push(file(nextId, LONG_MATERIAL_NAME, ["2024-2025", "25 08 August"]));
   // A month-only name in a month with no calendar meeting: the row is approximate.
   files.push(file(nextId, "AVCA Meeting Agenda - June 2024", ["2023-2024", "24 06 June"]));
   return { past, files };
@@ -155,6 +168,7 @@ function folders(): Record<DriveRoot, FolderResult> {
       file(nextId, "Proposed Amendment to Article IV, Membership and Dues, Draft of May 2026", ["Proposed Amendments"]),
       file(nextId, "Proposed Amendment 2026-05-12.pdf", ["Proposed Amendments"], { mimeType: PDF }),
       file(nextId, "Proposed Amendment 2026-05-12", ["Proposed Amendments"]),
+      file(nextId, LONG_REAL_NAME, ["Proposed Amendments"]),
       file(nextId, "AVCA By-Laws (2019)", ["Old Bylaws"]),
       file(nextId, "AVCA By-Laws (2011).pdf", ["Old Bylaws"], { mimeType: PDF }),
       file(nextId, "(OLD) AVCA By-Laws (2004)", ["Old Bylaws"]),
@@ -193,15 +207,13 @@ export function scenarios(): Scenario[] {
   ];
   const [next, ...rest] = upcomingSix;
   if (!next) throw new Error("no upcoming fixture meetings");
-  const inPerson: Meeting = {
-    ...next,
-    isVirtual: false,
-    location: "Arlington Central Library, Room 201",
-  };
+  // In person, at a location with no break opportunity: the hero of home-in-person and the first row of
+  // the Meetings schedule, so the 320px no-horizontal-scroll checks cover both place lines.
+  const inPerson: Meeting = { ...next, isVirtual: false, location: LONG_LOCATION };
   return [
     { slug: "home-virtual", meetings: [...past, next, ...rest], folders: folders() },
     { slug: "home-in-person", meetings: [...past, inPerson, ...rest], folders: folders() },
-    { slug: "meetings", meetings: [...past, ...upcomingSix], folders: folders() },
+    { slug: "meetings", meetings: [...past, inPerson, ...rest], folders: folders() },
     { slug: "documents", meetings: [...past, ...upcomingSix], folders: folders() },
   ];
 }

@@ -34,7 +34,7 @@ const nonEmpty = sections.filter((s) => s.files.length > 0);
   <slot />
   {
     !result.ok ? (
-      <FolderFallback folderUrl={result.folderUrl} />
+      <FolderFallback folderUrl={result.folderUrl} section={title} />
     ) : (
       <>
         {nonEmpty.length === 0 && <p>Nothing posted yet.</p>}
@@ -60,7 +60,7 @@ const nonEmpty = sections.filter((s) => s.files.length > 0);
           </div>
         ))}
         <p>
-          <a href={result.folderUrl}>Open folder in Google Drive</a>
+          <a href={result.folderUrl}>Open folder in Google Drive<span class="visually-hidden">, {title}</span></a>
         </p>
       </>
     )

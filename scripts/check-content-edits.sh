@@ -5,7 +5,8 @@
 # Usage: scripts/check-content-edits.sh        (npm run test:content-edits)
 #
 # Owner-editable content: src/content/settings.yaml, board.yaml, resources.yaml and pages/*.md. Tests
-# enforce RULES (schemas, https URLs, ...), never CONTENT (a name, a sentence, a count). This script
+# enforce RULES (schemas, https URLs, siteUrl agreeing with astro.config.mjs and public/CNAME, ...),
+# never CONTENT (a name, a sentence, a count). This script
 # keeps it that way: it applies one VALID edit at a time to a content file in place, runs `npm test`,
 # and restores the file; then applies all valid edits together and runs `OFFLINE=1 npm run test:build`;
 # then applies each INVALID edit and requires `npm test` to fail with the file name and the field in
@@ -31,7 +32,7 @@ work=$(mktemp -d)
 # did not work (e.g. a held index.lock) would leave edited content under every later case, so it is fatal.
 restore() {
   git checkout -q HEAD -- src/content && git clean -fdq -- src/content
-  if ! git diff --quiet -- src/content || [ -n "$(git ls-files --others -- src/content)" ]; then
+  if ! git diff --quiet -- src/content || [ -n "$(git ls-files --others --exclude-standard -- src/content)" ]; then
     echo "check-content-edits: FATAL: could not restore src/content to HEAD; it still holds edited content. Run: git checkout HEAD -- src/content && git clean -fd src/content" >&2
     return 1
   fi
@@ -157,7 +158,6 @@ VALID = {
     "resources.yaml: a link with no note": ("resources.yaml", no_note),
     "settings.yaml: change siteName": ("settings.yaml", lambda s: sub1(s, r"^siteName: .*$", "siteName: Fixture Neighbors Association")),
     "settings.yaml: change shortName": ("settings.yaml", lambda s: sub1(s, r"^shortName: .*$", "shortName: FNA")),
-    "settings.yaml: change siteUrl": ("settings.yaml", lambda s: sub1(s, r"^siteUrl: .*$", "siteUrl: https://fixture.example.org")),
     "settings.yaml: blank every drive id": ("settings.yaml", blank_drive_ids),
     "board.yaml: reorder two officers": ("board.yaml", swap_officers),
     "board.yaml: add block 8": ("board.yaml", lambda s: s.rstrip("\n") + "\n  - { block: 8, names: [G. Person] }\n"),
@@ -180,6 +180,9 @@ INVALID = {
     "board.yaml: kind: president": ("board.yaml", lambda s: sub1(s, r"^(  - \{ .*kind: )elected", r"\g<1>president"), "kind"),
     "resources.yaml: http:// URL": ("resources.yaml", lambda s: sub1(s, r"url: https://", "url: http://"), "url"),
     "settings.yaml: http:// siteUrl": ("settings.yaml", lambda s: sub1(s, r"^siteUrl: https://", "siteUrl: http://"), "siteUrl"),
+    # siteUrl must agree with `site` in astro.config.mjs and with public/CNAME (tests/site-identity.test.ts),
+    # so changing it alone is a mistake, not an edit.
+    "settings.yaml: siteUrl changed alone": ("settings.yaml", lambda s: sub1(s, r"^siteUrl: .*$", "siteUrl: https://fixture.example.org"), "siteUrl"),
     "settings.yaml: contactEmail not an address": ("settings.yaml", lambda s: sub1(s, r"^contactEmail: .*$", "contactEmail: not-an-address"), "contactEmail"),
     "board.yaml: malformed term month": ("board.yaml", lambda s: sub1(s, r"^officers:", 'term: { start: "2026-13", end: "2027-08" }\nofficers:'), "term"),
 }

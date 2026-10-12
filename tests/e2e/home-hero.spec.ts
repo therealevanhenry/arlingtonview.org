@@ -4,7 +4,7 @@
  * every project.
  */
 import { expect, test } from "@playwright/test";
-import { box, open, PREVIEW, resize } from "./support";
+import { box, LONG_LOCATION, open, PREVIEW, resize } from "./support";
 
 const readFirstLine = (selector: string) => async (page: import("@playwright/test").Page) =>
   page.locator(selector).evaluate((el) => {
@@ -94,6 +94,24 @@ test.describe("home hero (virtual meeting)", () => {
     }
   });
 
+  test("the Agenda link sits 12px (--space-3) under the note's contact link, not 4px", async ({ page }) => {
+    await open(page, PREVIEW.homeVirtual);
+    const m = await page.locator(".notice-agenda").evaluate((el) => {
+      const note = el.previousElementSibling!;
+      return {
+        previous: note.className,
+        margin: getComputedStyle(el).marginTop,
+        gap: el.getBoundingClientRect().top - note.getBoundingClientRect().bottom,
+        space3: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-3")),
+        rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+      };
+    });
+    expect(m.previous).toBe("notice-note");
+    expect(m.space3).toBe(0.75); // rem
+    expect(m.margin).toBe(`${0.75 * m.rem}px`);
+    expect(m.gap).toBeCloseTo(0.75 * m.rem, 0);
+  });
+
   test("exactly one .button; the virtual-link note is shown", async ({ page }) => {
     await open(page, PREVIEW.homeVirtual);
     await expect(page.locator(".button")).toHaveCount(1);
@@ -105,7 +123,7 @@ test.describe("home hero (virtual meeting)", () => {
 test.describe("home hero (in-person meeting with agenda)", () => {
   test("shows the location and agenda, and no virtual-link note", async ({ page }) => {
     await open(page, PREVIEW.homeInPerson);
-    await expect(page.locator(".notice-when")).toContainText("Arlington Central Library, Room 201");
+    await expect(page.locator(".notice-when")).toContainText(LONG_LOCATION);
     await expect(page.locator(".notice-note")).toHaveCount(0);
     await expect(page.locator(".notice-hero").getByRole("link", { name: "Agenda" })).toBeVisible();
     await expect(page.getByText("Virtual meeting", { exact: true })).toHaveCount(0);
@@ -120,6 +138,31 @@ test.describe("home hero (in-person meeting with agenda)", () => {
     expect(fontSize).toBeGreaterThanOrEqual(100);
     expect(fontSize).toBeLessThanOrEqual(120);
   });
+
+  test("with no note above it, the Agenda link keeps its place (no extra space)", async ({ page }) => {
+    await open(page, PREVIEW.homeInPerson);
+    const agenda = page.locator(".notice-agenda");
+    await expect(agenda).toHaveCount(1);
+    expect(await agenda.evaluate((el) => ({ first: el.previousElementSibling === null, margin: getComputedStyle(el).marginTop }))).toEqual({ first: true, margin: "0px" });
+  });
+
+  // The fixture location is one unbroken 68-character string (tests/preview/fixtures.ts).
+  for (const width of [320, 375, 1280]) {
+    test(`a long unbroken location wraps inside the notice at ${width}px`, async ({ page }) => {
+      await open(page, PREVIEW.homeInPerson);
+      await resize(page, width);
+      const m = await page.locator(".notice-when .notice-meta > p:nth-child(2)").evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const text = range.getBoundingClientRect();
+        const notice = el.closest(".notice-hero")!.getBoundingClientRect();
+        const style = getComputedStyle(el.closest(".notice-hero")!);
+        return { right: text.right, limit: notice.right - parseFloat(style.paddingRight), lines: new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size };
+      });
+      expect(m.right).toBeLessThanOrEqual(m.limit + 0.5);
+      if (width <= 375) expect(m.lines).toBeGreaterThan(1);
+    });
+  }
 });
 
 test.describe("quick links grid", () => {

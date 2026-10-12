@@ -29,6 +29,21 @@ export const PREVIEW = {
   documents: "/_preview/documents/",
 } as const;
 
+// Long unbreakable strings in the fixtures (tests/preview/fixtures.ts exports the same values; the specs
+// do not import that file, which pulls in the site's source). documents.spec.ts checks they are on the page.
+export const LONG_REAL_NAME = "AVCA_Article_V_Section_1_proposed_amendment";
+export const LONG_MATERIAL_NAME = "Traffic_Calming_Study_Appendix_B_Speed_And_Volume_Counts_v02";
+export const LONG_LOCATION = "Carver_Community_Center_Multipurpose_Room_East_Entrance_Second_Floor";
+
+/** The right edge of an element's rendered text, and the viewport width it must stay inside. */
+export async function textRightEdge(locator: Locator): Promise<{ right: number; viewport: number }> {
+  return locator.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return { right: range.getBoundingClientRect().right, viewport: document.documentElement.clientWidth };
+  });
+}
+
 export interface Probe {
   consoleErrors: string[];
   failedRequests: string[];

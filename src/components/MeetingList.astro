@@ -28,17 +28,20 @@ for (const m of meetings) {
       <ol class="schedule" role="list">
         {g.meetings.map((m) => {
           const agenda = agendaFor(m, rows);
+          const date = `${formatMeetingWeekday(m.start)}, ${formatMeetingMonthDay(m.start)}`;
           return (
             <li class="schedule-item">
               <p class="schedule-date">
-                <time datetime={m.start.toISOString()}>
-                  {formatMeetingWeekday(m.start)}, {formatMeetingMonthDay(m.start)}
-                </time>
+                <time datetime={m.start.toISOString()}>{date}</time>
               </p>
               <p class="schedule-details">
                 <span>{formatMeetingTime(m.start, m.end)}</span>
                 <span class="soft">{placeLabel(m)}</span>
-                {agenda !== undefined && <a href={agenda}>Agenda</a>}
+                {agenda !== undefined && (
+                  <a href={agenda}>
+                    Agenda<span class="visually-hidden">, {date}</span>
+                  </a>
+                )}
               </p>
             </li>
           );

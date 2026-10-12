@@ -1,6 +1,6 @@
 /** The Documents page with every section populated (fixture preview), and the real OFFLINE pages. */
 import { expect, test } from "@playwright/test";
-import { open, PREVIEW } from "./support";
+import { LONG_REAL_NAME, open, PREVIEW, resize, textRightEdge } from "./support";
 
 const SECTIONS = ["bylaws", "minutes", "presentations", "letters", "neighborhood-plan"];
 
@@ -22,6 +22,22 @@ test.describe("populated (fixture preview)", () => {
     await expect(page.getByRole("link", { name: "Open folder in Google Drive" })).toHaveCount(SECTIONS.length);
   });
 
+  test("each 'Open folder in Google Drive' link names its section for screen readers", async ({ page }) => {
+    await open(page, PREVIEW.documents);
+    const expected = [
+      ["bylaws", "Bylaws"],
+      ["minutes", "Minutes and agendas"],
+      ["presentations", "Presentations"],
+      ["letters", "Official letters"],
+      ["neighborhood-plan", "Neighborhood Plan"],
+    ] as const;
+    for (const [id, section] of expected) {
+      // The whole accessible name. The hidden span is absolutely positioned, so name computation may put a space before its comma.
+      const name = new RegExp(`^Open folder in Google Drive ?, ${section}$`);
+      await expect(page.locator(`#${id}`).getByRole("link", { name }), id).toHaveCount(1);
+    }
+  });
+
   test("an undated file shows 'Updated'", async ({ page }) => {
     await open(page, PREVIEW.documents);
     const undated = page.locator("#neighborhood-plan .file", { hasText: "Historic Resources Survey Summary" });
@@ -33,14 +49,27 @@ test.describe("populated (fixture preview)", () => {
     const names = await page.locator("#bylaws .file a").allTextContents();
     expect(names.filter((n) => n.startsWith("Proposed Amendment 2026-05-12"))).toEqual(["Proposed Amendment 2026-05-12.pdf"]);
   });
+
+  for (const width of [320, 375]) {
+    test(`a long file name with no break opportunity wraps instead of widening the page at ${width}px`, async ({ page }) => {
+      await open(page, PREVIEW.documents);
+      await resize(page, width);
+      const link = page.locator("#bylaws").getByRole("link", { name: LONG_REAL_NAME });
+      await expect(link).toBeVisible();
+      const { right, viewport } = await textRightEdge(link);
+      expect(right).toBeLessThanOrEqual(viewport);
+    });
+  }
 });
 
 test.describe("real OFFLINE build", () => {
-  test("every Documents section shows its folder link", async ({ page }) => {
+  test("every Documents section shows its folder link, each with a different accessible name", async ({ page }) => {
     await open(page, "/documents/");
     for (const id of SECTIONS) {
       await expect(page.locator(`#${id}`).getByRole("link", { name: "Open folder in Google Drive" }), id).toHaveCount(1);
     }
+    const names = await page.getByRole("link", { name: "Open folder in Google Drive" }).evaluateAll((links) => links.map((a) => (a.textContent ?? "").trim()));
+    expect(new Set(names).size).toBe(SECTIONS.length);
   });
 
   test("the home hero shows the meeting-rule sentence", async ({ page }) => {

@@ -322,6 +322,15 @@ a:hover {
   margin-block-start: var(--space-1);
 }
 
+/*
+ * The Agenda link, when it follows the virtual-link note: the note ends in the contact email link, and
+ * two links on consecutive lines need more than --space-1 between them. Alone (no note) it keeps its place.
+ * After .notice-meta > * + *, which it overrides at the same specificity.
+ */
+.notice-agenda:where(.notice-note + *) {
+  margin-block-start: var(--space-3);
+}
+
 /* ---------- Cornice ---------- */
 
 /*
@@ -475,6 +484,11 @@ a:hover {
   max-width: 34ch;
 }
 
+/* The place is free text from the calendar: a long unbroken string wraps instead of widening the page. */
+.notice-place {
+  overflow-wrap: anywhere;
+}
+
 /* ---------- Lead paragraph ---------- */
 
 /* Tops out at 1.5rem, a step under the notice's weekday and time, so it never competes with the hero. */
@@ -527,12 +541,15 @@ a:hover {
   list-style: none;
 }
 
+/* File names come from Drive and can be one long unbroken string (AVCA_Article_V_Section_1_...): the
+   link wraps anywhere rather than widening the page or a table. The date beside it never breaks. */
 .file {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 var(--space-4);
   padding-block: var(--space-1);
+  overflow-wrap: anywhere;
 }
 
 .file-date {
@@ -574,12 +591,14 @@ a:hover {
   color: var(--ink);
 }
 
+/* The place is free text from the calendar, so it may wrap anywhere (see .notice-place). */
 .schedule-details {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 var(--space-4);
   margin-block-start: var(--space-1);
+  overflow-wrap: anywhere;
 }
 
 @media (min-width: 40rem) {
@@ -620,16 +639,21 @@ a:hover {
   font-weight: 600;
 }
 
+/* A row header (the date of a past meeting) is a th for screen readers and is set like any other cell. */
+.table :where(tbody th) {
+  font-weight: 400;
+}
+
 /* The past-meetings table: four short columns do not need the whole container. Date, Agenda, and Minutes stay on one line; Materials takes the slack and wraps. */
 .table-archive {
   max-width: 52rem;
 }
 
-.table-archive :where(td:nth-child(-n + 3)) {
+.table-archive :where(th:nth-child(-n + 3), td:nth-child(-n + 3)) {
   white-space: nowrap;
 }
 
-/* Phones: each row restacks as a block, labelled from td[data-label]. Never a horizontal scroll. */
+/* Phones: each row restacks as a block, labelled from [data-label] on each cell. Never a horizontal scroll. */
 @media (max-width: 39.9375rem) {
   .table,
   .table :where(tbody, tr, th, td) {
@@ -659,7 +683,7 @@ a:hover {
     display: none;
   }
 
-  .table :where(td[data-label])::before {
+  .table :where(th[data-label], td[data-label])::before {
     content: attr(data-label);
     display: block;
     color: var(--ink-soft);

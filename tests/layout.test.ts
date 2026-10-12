@@ -31,6 +31,8 @@ beforeAll(async () => {
   });
 });
 
+const countOccurrences = (html: string, needle: string): number => html.split(needle).length - 1;
+
 function at(path: string): Request {
   return new Request(`${ORIGIN}${path}`);
 }
@@ -196,6 +198,36 @@ describe("Base", () => {
       });
       expect(html).toContain(`<link rel="canonical" href="${expected}">`);
     }
+  });
+
+  describe("robots: only the canonical site may be indexed", () => {
+    const NOINDEX = '<meta name="robots" content="noindex">';
+    const render = async (site: string | undefined): Promise<string> => {
+      const c = site === undefined ? container : await AstroContainer.create({ astroConfig: { site, trailingSlash: "always" } });
+      return c.renderToString(Base, { request: at("/meetings/"), props: { title: "Meetings" }, slots: { default: "<h1>Meetings</h1>" } });
+    };
+
+    it("says nothing when the build's origin is the origin of settings.siteUrl", async () => {
+      // Read at test time: the rule is the comparison, not the value.
+      const { siteUrl } = await getSettings();
+      for (const site of [siteUrl, `${new URL(siteUrl).origin}/`, `${new URL(siteUrl).origin}/some/base/`]) {
+        expect(await render(site), site).not.toContain('name="robots"');
+      }
+    });
+
+    it("says noindex when the build is for another origin, e.g. the github.io preview", async () => {
+      const { siteUrl } = await getSettings();
+      const canonicalHost = new URL(siteUrl).host;
+      for (const site of ["https://therealevanhenry.github.io", `https://www.${canonicalHost}`, `https://preview.${canonicalHost}`]) {
+        const html = await render(site);
+        expect(countOccurrences(html, NOINDEX), site).toBe(1);
+        expect(html.indexOf(NOINDEX), site).toBeLessThan(html.indexOf("</head>"));
+      }
+    });
+
+    it("says noindex when the build has no site at all", async () => {
+      expect(countOccurrences(await render(undefined), NOINDEX)).toBe(1);
+    });
   });
 
   it("keeps the full logo trace out of the page", async () => {

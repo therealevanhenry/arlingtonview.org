@@ -27,19 +27,26 @@ const missing = filesLoaded ? "Not posted" : "Not available";
         </tr>
       </thead>
       <tbody role="rowgroup">
-        {rows.map((r) => (
+        {rows.map((r) => {
+          // The row's date, read out after "Agenda" and "Minutes" so that no two links in the table share a name.
+          const date = formatArchiveDate(r.date, r.approximate);
+          return (
           <tr role="row">
-            <td role="cell" data-label="Date">
-              <time datetime={r.approximate ? r.date.slice(0, 7) : r.date}>{formatArchiveDate(r.date, r.approximate)}</time>
+            <th role="rowheader" scope="row" data-label="Date">
+              <time datetime={r.approximate ? r.date.slice(0, 7) : r.date}>{date}</time>
               {r.approximate && " (month)"}
-            </td>
+            </th>
             <td role="cell" data-label="Agenda">
-              {r.agenda ? <a href={r.agenda.url}>Agenda</a> : <span class="soft">{missing}</span>}
+              {r.agenda ? (
+                <a href={r.agenda.url}>Agenda<span class="visually-hidden">, {date}</span></a>
+              ) : (
+                <span class="soft">{missing}</span>
+              )}
             </td>
             <td role="cell" data-label="Minutes">
               {r.minutes ? (
                 <>
-                  <a href={r.minutes.url}>Minutes</a>
+                  <a href={r.minutes.url}>Minutes<span class="visually-hidden">, {date}</span></a>
                   {r.minutesDraft && " (draft)"}
                 </>
               ) : (
@@ -58,7 +65,8 @@ const missing = filesLoaded ? "Not posted" : "Not available";
               )}
             </td>
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   )

@@ -36,7 +36,7 @@ const mailto = `mailto:${settings.contactEmail}`;
         </p>
         <div class="notice-meta">
           <p class="notice-time">{formatMeetingTime(meeting.start, meeting.end)}</p>
-          <p>{placeLabel(meeting)}</p>
+          <p class="notice-place">{placeLabel(meeting)}</p>
         </div>
       </div>
     ) : (
@@ -53,7 +53,7 @@ const mailto = `mailto:${settings.contactEmail}`;
             </p>
           )}
           {meeting !== undefined && agenda !== undefined && (
-            <p>
+            <p class="notice-agenda">
               <a href={agenda}>Agenda</a>
             </p>
           )}
