@@ -2,13 +2,13 @@
 
 This script tells GitHub to rebuild the AVCA website whenever the Arlington View Civic Association (AVCA) meeting calendar changes. It runs in Google Apps Script, under the Google Workspace account that owns the AVCA meeting calendar.
 
-You only need to do this setup once, and again whenever the GitHub token expires.
+You only need to do this setup once, and again whenever the GitHub token expires. The token is a GitHub personal access token (PAT): a password-like string that lets the script act on one repository on your behalf, without your GitHub password.
 
 ## Token expiry
 
-PAT expires: ____ (set a calendar reminder two weeks before)
+PAT expires: ____ (YYYY-MM-DD; set a calendar reminder two weeks before)
 
-Fill in the date when you create the token in Part 1. If the token expires, calendar changes stop updating the website until you make a new token and replace it (Part 2, step 5).
+Fill in the date when you create the token in Part 1. If the token expires, calendar changes stop updating the website until you make a new token and replace it (see "Replacing an expired token" below).
 
 ## Part 1: Create the GitHub token
 
@@ -28,7 +28,11 @@ Fill in the date when you create the token in Part 1. If the token expires, cale
 2. Go to script.google.com and click New project.
 3. Delete the sample code. Paste in the full contents of `calendarTrigger.js` from this folder.
 4. Click the Save icon.
-5. Click Project Settings (the gear icon), then scroll to Script Properties and click Add script property. Set the name to `GITHUB_TOKEN` and the value to the token you copied. Click Save script properties. To replace an expired token later, edit this same property.
+5. Click Project Settings (the gear icon), then scroll to Script Properties and click Add script property. Set the name to `GITHUB_TOKEN` and the value to the token you copied. Click Save script properties.
+
+## Replacing an expired token
+
+Create a new token as in Part 1, then open the script's Project Settings, edit the `GITHUB_TOKEN` script property, paste the new token, and click Save script properties. Update the "PAT expires" line and the calendar reminder.
 
 ## Part 3: Add the trigger
 

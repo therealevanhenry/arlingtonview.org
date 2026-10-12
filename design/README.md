@@ -206,7 +206,7 @@ by source order and nothing needs `!important`.
 |---|---|
 | `.container` | page-width wrapper with gutters |
 | `.measure` | 70ch prose column |
-| `.stack` | vertical rhythm: `> * + *` gets `--stack-gap` (default `--space-4`); margins are otherwise reset to 0 |
+| `.stack` | vertical rhythm: `> * + *` gets `--stack-gap` (default `--space-4`); margins are otherwise reset to 0 only for the elements in the base reset (`body`, `h1` to `h4`, `p`, `ul`, `ol`, `dl`, `dd`, `figure`, `blockquote`, `table`); any other child element keeps its browser default margin, so check before putting something new in a `.stack` |
 | `.sections` | same, at `--section-gap`, for the top-level sections of a page |
 | `.visually-hidden` | available to screen readers, not drawn |
 | `.button` | the one primary action in a block: solid indigo, paper text, Source Sans 600, 2px radius, 44px minimum height. Secondary actions are plain links, never ghost buttons. The home page has exactly one: `Add to Google Calendar` |
@@ -283,6 +283,12 @@ Rules it follows, for anyone editing it:
 
 Below 28px (the footer size) it starts to close up; use the favicon drawing for anything smaller.
 
+The footer mark is drawn at 28px tall, which is below the 1.25 CSS px stroke floor the header mark meets:
+the 1.4-unit strokes render at about 0.8px there (1.4 x 28 / 48). That is accepted. The mark is
+decorative (`aria-hidden`), the footer carries all its information as text, and in ink on paper at 0.8px
+the strokes render as lighter lines rather than dropping out. Do not thicken it to fit: that would change
+the proportions the header mark shares.
+
 ### How `logo.svg` was traced
 
 vtracer 0.6.5, sharp 0.35.5:
@@ -326,3 +332,8 @@ Sans 3 400 and EB Garamond 500.
 | Source Sans 3 400 | 15,696 | 19,900 |
 | Source Sans 3 600 | 15,668 | 19,900 |
 | Total | 105,796 | 129,016 |
+
+Two things in `dist/` ship unused, and are not worth chasing. The five `.woff` fallback files are
+referenced by fontsource's per-weight CSS, so the build copies them; browsers that support woff2 (all
+current ones) never fetch them. And one `_astro/logo-small.*.svg` is emitted because the SVG component
+import also registers the file as an asset; the marks are inlined, so no page references it.
