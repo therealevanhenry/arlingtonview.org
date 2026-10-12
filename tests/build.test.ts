@@ -10,8 +10,10 @@
  *   npm run test:dist    asserts against an existing dist/ without building (deploy workflow)
  *
  * Assertion 4 (no conferencing link) is the backstop for the owner's calendar feed, which carries a
- * Google Meet join link in every event description. The loader discards descriptions by design;
- * this test makes sure nothing ever leaks if that changes.
+ * Google Meet join link in every event description. The loader never reads descriptions, strips links
+ * from locations, and hides Drive files whose names hold a link or an address (src/lib/privacy.ts);
+ * assertions 4 and 5 make sure nothing leaks if any of that changes. Their detectors, and the one for
+ * assertion 3, live in tests/support/dist-checks.ts and are unit-tested in tests/dist-checks.test.ts.
  *
  * Reproducibility (two builds compared) is deliberately not tested here; it is slow and belongs to
  * the deploy task.
@@ -20,9 +22,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { CONFERENCING_HELP, conferencingLinks, EMAIL_HELP, emailLeaks, TARGET_HELP, targetAttributes } from "./support/dist-checks";
 
 const DIST = resolve(process.cwd(), "dist");
-const EMAIL = /[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
 
 /** The one address the site may print: `contactEmail` in settings.yaml, read at test time. */
 function contactAddress(): string {
@@ -106,24 +108,19 @@ describe("build output (dist/)", () => {
     expect(bad).toEqual([]);
   });
 
-  it("3. no target attribute (including target=_blank)", () => {
-    expect(offenders((h) => h.match(/\starget\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi) ?? [])).toEqual([]);
+  it("3. no target attribute on any element (including target=_blank)", () => {
+    // Attributes only: text content, such as a Drive file name containing ` target=`, cannot fail this.
+    expect(offenders(targetAttributes), TARGET_HELP).toEqual([]);
   });
 
   it("4. no conferencing join link anywhere", () => {
-    const pattern = /zoom\.us|meet\.google\.com|teams\.microsoft\.com|webex\.com/gi;
-    expect(offenders((h) => h.match(pattern) ?? [])).toEqual([]);
+    expect(offenders(conferencingLinks), CONFERENCING_HELP).toEqual([]);
   });
 
   it("5. no gmail.com, and no email address other than settings.contactEmail", () => {
     // Page text must not type an address: the configured one is the only source (see JoinAction).
     const allowed = contactAddress();
-    const bad = pages().flatMap(({ name, html }) => {
-      const hits = (html.match(/gmail\.com/gi) ?? []).map((h) => `${name}: ${h}`);
-      const emails = (html.replace(/&#39;|&#x27;/g, "'").match(EMAIL) ?? []).filter((e) => e.toLowerCase() !== allowed).map((e) => `${name}: ${e}`);
-      return [...hits, ...emails];
-    });
-    expect(bad).toEqual([]);
+    expect(offenders((h) => emailLeaks(h, allowed)), EMAIL_HELP).toEqual([]);
   });
 
   it("6. internal links carry the base path, end in a slash (pages), and resolve to files in dist/", () => {
