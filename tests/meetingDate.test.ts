@@ -12,6 +12,22 @@ const cases: Array<[string, string | undefined, boolean?]> = [
   ["AVCA Proposed Agenda 6.23.201.docx", undefined],
   ["Budget 13.40.2024.xlsx", undefined],
   ["Budget 2.30.2024.xlsx", undefined],
+  ["AVCA Monthly Meeting Proposed Agenda - October 20, 2026", "2026-10-20"],
+  ["AVCA By-Laws (June 24th, 2026).pdf", "2026-06-24"],
+  ["Agenda Sept 3, 2025", "2025-09-03"],
+  ["AVCA 2026 Sep mtg mins (draft)", "2026-09-01", true],
+  ["AVCA 2026 June mtg mins", "2026-06-01", true],
+  ["AVCA 2025 Jun mtg mins", "2025-06-01", true],
+  ["(OLD) AVCA 2025 Feb mtg mins", "2025-02-01", true],
+  ["September 2020 Minutes", "2020-09-01", true],
+  ["Sep. 2020 Minutes", "2020-09-01", true],
+  ["Arlington View Civic Association Updated 06242026", undefined],
+  ["Summary 2020", undefined],
+  ["February 30, 2026 Agenda", undefined],
+  ["Jan 0000 notes", undefined],
+  ["Budget 13.40.2024 revised 6.24.2026.xlsx", "2026-06-24"],
+  ["12026-09-30 Minutes.pdf", undefined],
+  ["2026-09-30 Minutes 10.01.2026.pdf", "2026-09-30"],
 ];
 it.each(cases)("%s", (name, date, approx = false) => {
   const r = parseMeetingDate(name);
