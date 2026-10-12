@@ -1,0 +1,16 @@
+---
+interface Props {
+  /** `settings.drive.history`; blank means no link. */
+  folderId: string;
+}
+
+const id = Astro.props.folderId.trim();
+---
+
+{
+  id !== "" && (
+    <p>
+      <a href={`https://drive.google.com/drive/folders/${id}`}>Open the history folder in Google Drive</a>
+    </p>
+  )
+}

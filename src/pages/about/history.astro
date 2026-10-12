@@ -1,22 +1,23 @@
 ---
 import { getEntry, render } from "astro:content";
-import { Image } from "astro:assets";
+import HistoryFolderLink from "../../components/HistoryFolderLink.astro";
+import HistoryPhotos from "../../components/HistoryPhotos.astro";
 import Base from "../../layouts/Base.astro";
 import { lastUpdated, loadSiteData } from "../../lib/data";
+import { photosFromModules } from "../../lib/historyPhotos";
 
 const entry = await getEntry("pages", "history");
 if (entry === undefined) throw new Error("src/content/pages/history.md is missing");
 const { Content } = await render(entry);
 
 const data = await loadSiteData();
-const historyId = data.settings.drive.history.trim();
 
 // The seven County GIS aerial photographs, oldest first. Imported so Astro optimizes them.
-const modules = import.meta.glob<{ default: ImageMetadata }>("../../assets/history/AVCA_*.png", { eager: true });
-const photos = Object.entries(modules)
-  .map(([path, mod]) => ({ year: /AVCA_(\d{4})\.png$/.exec(path)?.[1] ?? "", image: mod.default }))
-  .sort((a, b) => a.year.localeCompare(b.year));
+const photos = photosFromModules(
+  import.meta.glob<{ default: ImageMetadata }>("../../assets/history/*.png", { eager: true }),
+);
 ---
+
 
 <Base
   title="History"
@@ -32,32 +33,8 @@ const photos = Object.entries(modules)
     </section>
     <section class="stack" aria-labelledby="photographs">
       <h2 id="photographs">Aerial photographs</h2>
-      <ul class="photos" role="list">
-        {
-          photos.map((p, i) => (
-            <li>
-              <figure class="photo">
-                <Image
-                  src={p.image}
-                  alt={`Aerial photograph of Arlington View, ${p.year}`}
-                  format="webp"
-                  widths={[480, 800, 1200]}
-                  sizes="(min-width: 64rem) 22rem, (min-width: 40rem) 50vw, 100vw"
-                  loading={i === 0 ? "eager" : "lazy"}
-                />
-                <figcaption class="photo-caption">{p.year}</figcaption>
-              </figure>
-            </li>
-          ))
-        }
-      </ul>
-      {
-        historyId !== "" && (
-          <p>
-            <a href={`https://drive.google.com/drive/folders/${historyId}`}>Open the history folder in Google Drive</a>
-          </p>
-        )
-      }
+      <HistoryPhotos photos={photos} />
+      <HistoryFolderLink folderId={data.settings.drive.history} />
     </section>
   </div>
 </Base>

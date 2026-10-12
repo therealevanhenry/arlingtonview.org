@@ -22,7 +22,7 @@ const shown = groups
   .filter((g) => g.officers.length > 0);
 
 const isVacant = (name: string) => name === "Vacant";
-const blocks = board.blockCaptains.map((b) => ({ block: b.block, names: b.names }));
+const blocks = board.blockCaptains;
 const anyVacant = blocks.some((b) => b.names.length === 0);
 ---
 

@@ -23,11 +23,13 @@ const board = await getBoard();
   <div class="sections">
     <section class="stack">
       <h1>About</h1>
-      <!-- The rendered Markdown and the drawing share one grid; on phones the drawing follows the first paragraph. -->
-      <div class="prose prose-lead about-intro">
-        <Content />
+      <!-- Two grid children: the rendered Markdown, then the drawing (after the whole intro on phones, beside it from 56rem). -->
+      <div class="about-intro">
+        <div class="about-text prose prose-lead">
+          <Content />
+        </div>
         <div class="about-drawing">
-          <Logo role="img" aria-label="Line drawing of the Gray house, the association's logo" />
+          <Logo class="about-drawing-art" role="img" aria-label="Line drawing of the Gray house, the association's logo" />
         </div>
       </div>
     </section>

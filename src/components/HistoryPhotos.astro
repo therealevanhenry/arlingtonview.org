@@ -1,0 +1,31 @@
+---
+import { Image } from "astro:assets";
+import type { HistoryPhoto } from "../lib/historyPhotos";
+
+interface Props {
+  /** Oldest first. */
+  photos: HistoryPhoto[];
+}
+
+const { photos } = Astro.props;
+---
+
+<ul class="photos" role="list">
+  {
+    photos.map((p, i) => (
+      <li>
+        <figure class="photo">
+          <Image
+            src={p.image}
+            alt={`Aerial photograph of Arlington View, ${p.year}`}
+            format="webp"
+            widths={[480, 800, 1200]}
+            sizes="(min-width: 64rem) 22rem, (min-width: 40rem) 50vw, 100vw"
+            loading={i === 0 ? "eager" : "lazy"}
+          />
+          <figcaption class="photo-caption">{p.year}</figcaption>
+        </figure>
+      </li>
+    ))
+  }
+</ul>

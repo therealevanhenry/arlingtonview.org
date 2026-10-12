@@ -112,6 +112,7 @@ const MONTH_NAMES = [
 
 /** `2026-09` as `September 2026`. Takes the board schema's `YYYY-MM` form, which is already validated. */
 export function formatTermMonth(month: string): string {
-  const [year, number] = month.split("-");
-  return `${MONTH_NAMES[Number(number) - 1]} ${year}`;
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
+  if (match === null) throw new Error(`formatTermMonth: expected YYYY-MM with a month from 01 to 12, got "${month}"`);
+  return `${MONTH_NAMES[Number(match[2]) - 1]} ${match[1]}`;
 }

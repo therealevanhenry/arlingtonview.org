@@ -1,6 +1,8 @@
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import BoardTable from "../src/components/BoardTable.astro";
+import HistoryFolderLink from "../src/components/HistoryFolderLink.astro";
+import HistoryPhotos from "../src/components/HistoryPhotos.astro";
 import JoinAction from "../src/components/JoinAction.astro";
 import LinkGroups from "../src/components/LinkGroups.astro";
 import ArchiveTable from "../src/components/ArchiveTable.astro";
@@ -15,7 +17,12 @@ import { nextMeeting } from "../src/lib/calendar";
 import type { DriveFile } from "../src/lib/drive";
 import { withBase } from "../src/lib/paths";
 import { getBoard, getResources, getSettings, type Board, type Settings } from "../src/lib/settings";
+import History from "../src/pages/about/history.astro";
 import Documents from "../src/pages/documents.astro";
+import { formatTermMonth } from "../src/lib/time";
+import { photosFromModules } from "../src/lib/historyPhotos";
+import img1934 from "../src/assets/history/AVCA_1934.png";
+import img1956 from "../src/assets/history/AVCA_1956.png";
 import Home from "../src/pages/index.astro";
 import Meetings from "../src/pages/meetings.astro";
 import type { ArchiveRow } from "../src/lib/archive";
@@ -56,6 +63,13 @@ vi.mock("../src/lib/data", async (importOriginal) => {
     },
   };
 });
+
+// The content layer's data store is empty under Vitest (see src/lib/settings.ts), so the pages that render a
+// Markdown entry get a stand-in entry whose body is a lead paragraph and a second paragraph.
+vi.mock("astro:content", () => ({
+  getEntry: async (collection: string, id: string) => ({ collection, id, data: { title: id } }),
+  render: async () => ({ Content: (await import("./fixtures/ProseStub.astro")).default }),
+}));
 
 let container: AstroContainer;
 let settings: Settings;
@@ -915,6 +929,31 @@ describe("BoardTable", () => {
     expect(html).not.toContain("Vacant");
   });
 
+  it("pins the committed roster: the owner's nine officers and seven blocks, in order", async () => {
+    const real = await getBoard();
+    expect(real.term).toBeUndefined();
+    expect(real.officers).toEqual([
+      { role: "President", name: "Evan Henry", kind: "elected" },
+      { role: "Vice President", name: "Craig Syphax", kind: "elected" },
+      { role: "Secretary", name: "Cameron Fletcher", kind: "elected" },
+      { role: "Treasurer", name: "Linda Briggs", kind: "elected" },
+      { role: "Parliamentarian", name: "Vacant", kind: "elected" },
+      { role: "Chaplain", name: "Wilbur Briggs", kind: "elected" },
+      { role: "Public Relations Officer", name: "Vacant", kind: "elected" },
+      { role: "Arlington Neighborhoods Advisory Committee (ArNAC) Representative", name: "Carter Echols", kind: "appointed" },
+      { role: "President Emeritus", name: "Ron Greene", kind: "honorary" },
+    ]);
+    expect(real.blockCaptains).toEqual([
+      { block: 1, names: ["Carter Echols"] },
+      { block: 2, names: ["Evan Henry"] },
+      { block: 3, names: ["Cameron Fletcher"] },
+      { block: 4, names: [] },
+      { block: 5, names: [] },
+      { block: 6, names: [] },
+      { block: 7, names: ["Linda Briggs", "Patricia Tillman-Talbert"] },
+    ]);
+  });
+
   it("renders the committed roster exactly as given", async () => {
     const real = await getBoard();
     const html = await container.renderToString(BoardTable, { props: { board: real, contactEmail: settings.contactEmail } });
@@ -956,7 +995,9 @@ describe("JoinAction", () => {
   });
 
   it("treats a blank-looking form URL as no form", async () => {
-    expect(await render("  ")).toContain("Email the president");
+    const html = await render("  ");
+    expect(html).toContain("Email the president");
+    expect(html).not.toContain("membership form");
   });
 
   it("offers the form as the button, and the email as a plain link, when a form exists", async () => {
@@ -964,6 +1005,82 @@ describe("JoinAction", () => {
     expect(html).toMatch(/<a class="button" href="https:\/\/forms\.example\.test\/join">Open the membership form<\/a>/);
     expect(html).toMatch(/<a href="mailto:president@example\.test">[^<]+<\/a>/);
     expect(html).not.toContain('class="button" href="mailto:');
+    expect(html).not.toContain("target=");
+  });
+});
+
+describe("formatTermMonth", () => {
+  it("formats YYYY-MM as a month name and year", () => {
+    expect(formatTermMonth("2026-09")).toBe("September 2026");
+    expect(formatTermMonth("2028-08")).toBe("August 2028");
+    expect(formatTermMonth("2027-01")).toBe("January 2027");
+    expect(formatTermMonth("2027-12")).toBe("December 2027");
+  });
+
+  it("throws a clear error for a month outside 01 to 12", () => {
+    for (const bad of ["2026-00", "2026-13", "2026-9", "2026", "September 2026"]) {
+      expect(() => formatTermMonth(bad), bad).toThrow(/expected YYYY-MM/);
+    }
+  });
+});
+
+describe("photosFromModules", () => {
+  const mod = (image: unknown) => ({ default: image as ImageMetadata });
+
+  it("reads the year from each file name and sorts ascending", () => {
+    const photos = photosFromModules({
+      "../../assets/history/AVCA_1956.png": mod(img1956),
+      "../../assets/history/AVCA_1934.png": mod(img1934),
+    });
+    expect(photos.map((p) => p.year)).toEqual(["1934", "1956"]);
+  });
+
+  it("throws, naming the file, when the name is not AVCA_<year>.png", () => {
+    expect(() => photosFromModules({ "../../assets/history/map-1934.png": mod(img1934) })).toThrow(/map-1934\.png.*AVCA_<year>\.png/);
+  });
+});
+
+describe("History page", () => {
+  const years = ["1934", "1956", "1962", "1969", "1974", "1983", "1989"];
+  const photos = years.map((year, i) => ({ year, image: i % 2 === 0 ? img1934 : img1956 }));
+  const render = () => container.renderToString(HistoryPhotos, { props: { photos } });
+
+  it("renders seven figures in ascending year order, each with alt text and a year caption", async () => {
+    const html = await render();
+    const figures = [...html.matchAll(/<figure[^>]*>([\s\S]*?)<\/figure>/g)].map((m) => m[1]);
+    expect(figures).toHaveLength(7);
+    figures.forEach((fig, i) => {
+      expect(fig).toContain(`alt="Aerial photograph of Arlington View, ${years[i]}"`);
+      expect(fig).toMatch(new RegExp(`<figcaption[^>]*>${years[i]}</figcaption>`));
+    });
+  });
+
+  it("loads the first image eagerly and the rest lazily, with explicit width and height", async () => {
+    const imgs = [...(await render()).matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
+    expect(imgs).toHaveLength(7);
+    imgs.forEach((tag, i) => {
+      expect(tag).toContain(i === 0 ? 'loading="eager"' : 'loading="lazy"');
+      expect(tag).toMatch(/\swidth="\d+"/);
+      expect(tag).toMatch(/\sheight="\d+"/);
+      expect(tag).toContain("f=webp");
+    });
+  });
+
+  it("links the Drive history folder by ID, and omits the link when the ID is blank or whitespace", async () => {
+    const link = (folderId: string) => container.renderToString(HistoryFolderLink, { props: { folderId } });
+    const html = await link("abc123");
+    expect(html).toContain('href="https://drive.google.com/drive/folders/abc123"');
+    expect(html).toContain("Open the history folder in Google Drive");
+    expect(html).not.toContain("target=");
+    for (const blank of ["", "   "]) expect((await link(blank)).trim(), JSON.stringify(blank)).toBe("");
+  });
+
+  it("builds the page with one h1, no script, no new-tab links", async () => {
+    const html = await container.renderToString(History, { request: new Request("https://arlingtonview.org/about/history/") });
+    expect(countOf(html, "<h1")).toBe(1);
+    expect(html).toContain("<title>History | ");
+    expect(countOf(html, "<figure")).toBe(7);
+    expect(html).not.toContain("<script");
     expect(html).not.toContain("target=");
   });
 });

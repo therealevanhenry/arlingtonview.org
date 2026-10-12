@@ -672,9 +672,9 @@ a:hover {
 
 /*
  * Rendered Markdown cannot carry classes, so .prose styles its descendants. This is the one exception
- * to the flat-selector rule; every nested selector sits in :where(), so the specificity stays one class.
+ * to the flat-selector rule; every selector after the class sits in :where(), so the specificity stays one class.
  */
-.prose > * + * {
+.prose > :where(* + *) {
   margin-block-start: var(--space-4);
 }
 
@@ -682,7 +682,7 @@ a:hover {
   margin-block-start: var(--space-6);
 }
 
-.prose > :where(h2) + * {
+.prose > :where(h2 + *) {
   margin-block-start: var(--space-3);
 }
 
@@ -697,52 +697,33 @@ a:hover {
 
 /* ---------- About: introduction with the house drawing ---------- */
 
-/* Phones: a column in which the drawing (last in the markup) is ordered to follow the first paragraph. */
+/* Two children: .about-text (the rendered prose) and .about-drawing. On phones they stack, the drawing
+   after the whole intro prose, 180px tall, in indigo. */
 .about-intro {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-5);
   max-width: var(--measure);
 }
 
-.about-intro > * {
-  order: 2;
-}
-
-.about-intro > :where(:first-child) {
-  order: 0;
-}
-
-.about-intro > :where(.about-drawing) {
-  order: 1;
+.about-drawing {
   color: var(--indigo);
 }
 
-.about-drawing :where(svg) {
+.about-drawing-art {
   width: auto;
   height: 11.25rem;
 }
 
 @media (min-width: 56rem) {
-  /* Text in the left column, the drawing top-aligned in the right. Rows have no gap, so the drawing can
-     span as many as it needs; spacing comes from the prose margins. */
+  /* Text in the left column at the measure, the drawing top-aligned in the right at 15rem (240px). */
   .about-intro {
-    display: grid;
     grid-template-columns: minmax(0, var(--measure)) 15rem;
     column-gap: var(--space-8);
     max-width: none;
   }
 
-  .about-intro > * {
-    grid-column: 1;
-  }
-
-  .about-intro > :where(.about-drawing) {
-    grid-column: 2;
-    grid-row: 1 / span 12;
-    margin-block-start: 0;
-  }
-
-  .about-drawing :where(svg) {
+  .about-drawing-art {
     width: 100%;
     height: auto;
   }
