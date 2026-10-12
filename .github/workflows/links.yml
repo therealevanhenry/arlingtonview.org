@@ -1,0 +1,58 @@
+name: External links
+
+on:
+  schedule:
+    - cron: "0 12 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: OFFLINE=1 npm run build
+
+      - name: Check external links
+        id: lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config lychee.toml './dist/**/*.html'
+          output: lychee/out.md
+          fail: false
+
+      - name: Add manual-check note to report
+        if: steps.lychee.outputs.exit_code != 0
+        run: |
+          {
+            printf '\n\n---\n'
+            printf 'Links to arlingtonva.us (county pages) are not checked automatically: the county site blocks '
+            printf 'non-browser clients with HTTP 403. They need a manual look in a real browser.\n'
+          } >> lychee/out.md
+
+      - name: Find existing issue
+        id: existing
+        if: steps.lychee.outputs.exit_code != 0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search 'in:title "Broken external links"' --json number,title --jq '[.[] | select(.title == "Broken external links")][0].number // empty')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update issue
+        if: steps.lychee.outputs.exit_code != 0
+        uses: peter-evans/create-issue-from-file@v6
+        with:
+          title: Broken external links
+          content-filepath: lychee/out.md
+          issue-number: ${{ steps.existing.outputs.number }}

@@ -1,0 +1,28 @@
+# lychee configuration for the weekly external link check (.github/workflows/links.yml).
+#
+# County links: www.arlingtonva.us answers HTTP 403 to every non-browser client, real and fake
+# paths alike. lychee's `accept` list is global (it cannot be scoped to one host), so accepting 403
+# would also hide real 403s elsewhere. Instead arlingtonva.us is excluded entirely: county links are
+# NOT checked automatically and need a manual look (the issue body says so).
+# scripts/verify-links.sh reports them as warnings; verify them in a real browser.
+#
+# Internal links are covered by tests/build.test.ts, so only https URLs are checked here.
+
+scheme = ["https"]
+no_progress = true
+verbose = "info"
+max_redirects = 10
+max_retries = 2
+retry_wait_time = 2
+timeout = 20
+user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+accept = ["200..=299", "429"]
+include_mail = false
+
+exclude = [
+  '^https?://([^/]+\.)?arlingtonva\.us(/|$)',
+  '^https?://drive\.google\.com(/|$)',
+  '^https?://docs\.google\.com(/|$)',
+  '^https?://calendar\.google\.com(/|$)',
+  '^mailto:',
+]

@@ -21,4 +21,4 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run check
-      - run: OFFLINE=1 npm run build
+      - run: OFFLINE=1 npm run test:build
