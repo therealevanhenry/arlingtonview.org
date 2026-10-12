@@ -12,7 +12,11 @@ command, WebKit + Chromium + Firefox in CI (`.github/workflows/browsers.yml`).
 | `npm run preview:fixtures` | Only regenerate `dist/_preview/` (needs an existing build). |
 
 The server is `astro preview --ignore-lock` on port 4331, started and stopped by Playwright, so it never
-collides with `npm run preview` on 4321. The HTML report is `playwright-report/`; per-test output
+collides with `npm run preview` on 4321. `--ignore-lock` is needed because Astro 7's `preview` refuses to start while
+another preview (e.g. your own `npm run preview`) holds its lock; the flag skips only that lock check, and the port
+stays exclusive because `reuseExistingServer` is false. A global setup fails fast if the served site is not the
+`OFFLINE=1` build with previews present (so a bare `npx playwright test` against a stale or live-data `dist/` cannot
+report meaningless results). The HTML report is `playwright-report/`; per-test output
 (including a full-page screenshot per page per project, attached to each test) is `test-results/`. Both are
 git-ignored.
 
@@ -29,7 +33,7 @@ git-ignored.
   OFFLINE pages (meeting rule, folder links, no conferencing link).
 
 Tap targets: every link and button must be 24x24 CSS px, or have 24px of clear space around it (WCAG 2.5.8
-spacing exception; inline links are about 22px tall but never crowded). `.button` must be 44px tall.
+spacing exception only; no inline-link exemption is applied, so the roughly 22px-tall inline links pass because nothing sits within 24px of them). `.button` must be 44px tall.
 The hero bottoms check compares the last line of text in each zone, not box edges, because the action links
 carry 44px of invisible tap height.
 

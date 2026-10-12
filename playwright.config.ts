@@ -13,6 +13,7 @@ export default defineConfig({
   forbidOnly: CI,
   retries: CI ? 1 : 0,
   timeout: 30_000,
+  globalSetup: "./tests/e2e/global-setup.ts",
   expect: { timeout: 5_000 },
   reporter: [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]],
   use: {
@@ -20,6 +21,9 @@ export default defineConfig({
     trace: "off",
   },
   webServer: {
+    // --ignore-lock: Astro 7's `preview` refuses to start while another preview holds its lock (e.g. a
+    // developer's own `npm run preview`). The flag skips only that lock check; the port stays exclusive
+    // because reuseExistingServer is false, so a taken 4331 fails loudly instead of testing the wrong server.
     command: `npx astro preview --ignore-lock --host 127.0.0.1 --port ${PORT}`,
     url: `http://127.0.0.1:${PORT}/`,
     reuseExistingServer: false,

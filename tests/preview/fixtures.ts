@@ -6,7 +6,7 @@
  * `FIXTURE_NOW` is the "current time" the previews are rendered at.
  */
 import type { Meeting } from "../../src/lib/calendar";
-import type { DriveFile, FolderResult } from "../../src/lib/drive";
+import type { DriveFile, DriveRoot, FolderResult } from "../../src/lib/drive";
 import { parseMeetingDate } from "../../src/lib/meetingDate";
 
 export const FIXTURE_NOW = new Date("2026-10-12T16:00:00Z");
@@ -15,7 +15,7 @@ export type Scenario = {
   /** Directory under dist/_preview/ and the route the page is rendered for. */
   slug: "home-virtual" | "home-in-person" | "meetings" | "documents";
   meetings: Meeting[];
-  folders: Record<string, FolderResult>;
+  folders: Record<DriveRoot, FolderResult>;
 };
 
 const DOC = "application/vnd.google-apps.document";
@@ -120,7 +120,7 @@ function archive(nextId: () => string): { past: Meeting[]; files: DriveFile[] } 
   return { past, files };
 }
 
-function folders(): Record<string, FolderResult> {
+function folders(): Record<DriveRoot, FolderResult> {
   const nextId = idMaker();
   const { files } = archive(nextId);
   return {

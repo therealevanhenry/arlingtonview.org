@@ -63,7 +63,7 @@ for (const { name, path } of ALL_PAGES) {
       }
     });
 
-    test("link and button targets meet WCAG 2.5.8 (24px, or 24px of clear space); primary actions are 44px tall", async ({ page }) => {
+    test("link and button targets meet WCAG 2.5.8 (24px, or 24px of clear space; no inline exemption); primary actions are 44px tall", async ({ page }) => {
       await open(page, path);
       const { small, short } = await page.evaluate(() => {
         const label = (el: Element): string => `<${el.tagName.toLowerCase()} class="${el.className}"> ${(el.textContent ?? "").trim().slice(0, 40)}`;
@@ -83,7 +83,7 @@ for (const { name, path } of ALL_PAGES) {
           const { width, height } = t.rect;
           if (t.el.classList.contains("button") && height < 44) short.push(`${label(t.el)} ${Math.round(height)}px`);
           if (width >= 24 && height >= 24) continue;
-          // Spacing exception: a 24px circle centered on the target must touch no other target.
+          // WCAG 2.5.8 spacing exception (there is no separate inline-link exemption here): a 24px circle centered on the target must touch no other target.
           const cx = t.rect.left + width / 2;
           const cy = t.rect.top + height / 2;
           const crowded = targets.some((u) => u.el !== t.el && gap(cx, cy, u.rect) < 12);
@@ -95,29 +95,30 @@ for (const { name, path } of ALL_PAGES) {
       expect(short).toEqual([]);
     });
 
-    test("tab reaches the skip link first, visible, and nav focus has an outline", async ({ page }, testInfo) => {
-      test.skip(testInfo.project.name === "webkit-phone", "no keyboard on the touch project; the desktop projects cover tab order");
-      await open(page, path);
-      // Safari/WebKit skips links with Tab unless "Press Tab to highlight each item" is on; Playwright's
-      // WebKit follows Chromium's behavior, so plain Tab is used for every engine.
-      await page.keyboard.press("Tab");
-      const skip = page.locator(".skip-link");
-      await expect(skip).toBeFocused();
-      const rect = await skip.boundingBox();
-      expect(rect, "skip link has a box").not.toBeNull();
-      expect(rect!.y).toBeGreaterThanOrEqual(0);
-      expect(rect!.x).toBeGreaterThanOrEqual(0);
-      await page.keyboard.press("Tab"); // the brand link
-      await page.keyboard.press("Tab"); // the first nav link
-      const nav = page.locator(".site-nav-link").first();
-      await expect(nav).toBeFocused();
-      const outline = await nav.evaluate((el) => {
-        const s = getComputedStyle(el);
-        return { style: s.outlineStyle, width: parseFloat(s.outlineWidth) };
+    for (const width of [undefined, 375]) {
+      test(`tab reaches the skip link first, visible, and nav focus has an outline${width ? ` (${width}px wide)` : ""}`, async ({ page }, testInfo) => {
+        test.skip(testInfo.project.name === "webkit-phone", "no keyboard on the touch project; the desktop projects cover tab order");
+        await open(page, path);
+        if (width) await resize(page, width);
+        const skip = page.locator(".skip-link");
+        await expect(skip).not.toBeInViewport();
+        // Playwright's WebKit tabs through links like Chromium (no Safari "Press Tab to highlight" setting).
+        await page.keyboard.press("Tab");
+        await expect(skip).toBeFocused();
+        await expect(skip).toBeVisible();
+        await expect(skip).toBeInViewport({ ratio: 1 });
+        await page.keyboard.press("Tab"); // the brand link
+        await page.keyboard.press("Tab"); // the first nav link
+        const nav = page.locator(".site-nav-link").first();
+        await expect(nav).toBeFocused();
+        const outline = await nav.evaluate((el) => {
+          const s = getComputedStyle(el);
+          return { style: s.outlineStyle, width: parseFloat(s.outlineWidth) };
+        });
+        expect(outline.style).not.toBe("none");
+        expect(outline.width).toBeGreaterThanOrEqual(2);
       });
-      expect(outline.style).not.toBe("none");
-      expect(outline.width).toBeGreaterThanOrEqual(2);
-    });
+    }
 
     test("full-page screenshot (artifact, not asserted)", async ({ page }, testInfo) => {
       await open(page, path);

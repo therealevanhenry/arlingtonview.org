@@ -79,4 +79,3 @@ export async function box(locator: Locator): Promise<{ x: number; y: number; wid
   return { x, y, width, height, right: x + width, bottom: y + height };
 }
 
-export const slug = (name: string): string => name.replace(/[^a-z0-9]+/gi, "-").toLowerCase();

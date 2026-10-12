@@ -11,7 +11,10 @@ permissions:
 
 jobs:
   browsers:
-    runs-on: ubuntu-latest
+    # Pinned (not ubuntu-latest): latest moves to Ubuntu 26 on 2026-10-19 and Playwright's --with-deps
+    # support for it is unknown. Move this together with a Playwright upgrade.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

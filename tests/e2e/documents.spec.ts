@@ -7,6 +7,8 @@ const SECTIONS = ["bylaws", "minutes", "presentations", "letters", "neighborhood
 test.describe("populated (fixture preview)", () => {
   test("hidden files and folders never appear", async ({ page }) => {
     await open(page, PREVIEW.documents);
+    // Positive control: a sibling of the hidden entries is on the page, so zero matches below means hidden.
+    await expect(page.getByRole("link", { name: "AVCA By-Laws (2019)" })).toBeVisible();
     await expect(page.getByText("(OLD)")).toHaveCount(0);
     await expect(page.getByText("Superseded drafts")).toHaveCount(0);
     await expect(page.getByText("Scans to sort")).toHaveCount(0);
@@ -48,7 +50,9 @@ test.describe("real OFFLINE build", () => {
     expect((await rule.textContent())?.trim().length ?? 0).toBeGreaterThan(20);
   });
 
-  test("no page links to a conferencing service", async ({ request }) => {
+  // The HTML is identical for every project, so this runs once, in webkit-desktop.
+  test("no page links to a conferencing service", async ({ request }, testInfo) => {
+    test.skip(testInfo.project.name !== "webkit-desktop", "project-independent; runs once");
     for (const path of ["/", "/meetings/", "/documents/", "/about/", "/about/history/", "/join/", "/resources/", "/404.html"]) {
       const html = await (await request.get(path)).text();
       expect(html, path).not.toMatch(/meet\.google\.com|zoom\.us/i);

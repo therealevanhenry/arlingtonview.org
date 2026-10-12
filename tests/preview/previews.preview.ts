@@ -15,13 +15,14 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:
 import { resolve } from "node:path";
 import { it, vi } from "vitest";
 import type { Meeting } from "../../src/lib/calendar";
-import type { FolderResult } from "../../src/lib/drive";
+import type { SiteData } from "../../src/lib/data";
+import type { DriveRoot, FolderResult } from "../../src/lib/drive";
 import Documents from "../../src/pages/documents.astro";
 import Home from "../../src/pages/index.astro";
 import Meetings from "../../src/pages/meetings.astro";
 import { scenarios } from "./fixtures";
 
-const state = vi.hoisted(() => ({ meetings: [] as Meeting[], folders: {} as Record<string, FolderResult> }));
+const state = vi.hoisted(() => ({ meetings: [] as Meeting[], folders: {} as Record<DriveRoot, FolderResult> }));
 
 vi.mock("../../src/lib/data", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/lib/data")>();
@@ -30,13 +31,15 @@ vi.mock("../../src/lib/data", async (importOriginal) => {
   const { FIXTURE_NOW: now } = await import("./fixtures");
   return {
     ...actual,
-    loadSiteData: async () => ({
-      settings: await getSettings(),
-      now,
-      calendar: { ok: true, meetings: state.meetings },
-      folders: state.folders,
-      rows: buildArchive(state.meetings, state.folders as never),
-    }),
+    // `satisfies` ties the mock to the real SiteData: a new field there fails `astro check` here.
+    loadSiteData: async () =>
+      ({
+        settings: await getSettings(),
+        now,
+        calendar: { ok: true, meetings: state.meetings },
+        folders: state.folders,
+        rows: buildArchive(state.meetings, state.folders),
+      }) satisfies SiteData,
   };
 });
 
@@ -45,9 +48,12 @@ const ASTRO = resolve(DIST, "_astro");
 const PAGES = { "home-virtual": Home, "home-in-person": Home, meetings: Meetings, documents: Documents } as const;
 
 function builtAsset(prefix: string, ext: string): string {
-  const found = readdirSync(ASTRO).find((name) => name.startsWith(prefix) && name.endsWith(ext));
-  if (!found) throw new Error(`dist/_astro has no ${prefix}*${ext}; run a build first`);
-  return `/_astro/${found}`;
+  const found = readdirSync(ASTRO)
+    .filter((name) => name.startsWith(prefix) && name.endsWith(ext))
+    .sort();
+  if (found.length === 0) throw new Error(`dist/_astro has no ${prefix}*${ext}; run a build first`);
+  if (found.length > 1) throw new Error(`dist/_astro has several ${prefix}*${ext} (${found.join(", ")}); the preview linker assumes one`);
+  return `/_astro/${found[0]}`;
 }
 
 it("writes the fixture previews", async () => {
