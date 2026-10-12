@@ -4,9 +4,15 @@ import { formatArchiveDate } from "../lib/time";
 
 interface Props {
   rows: ArchiveRow[];
+  /**
+   * Whether the Minutes & Agendas folder was read. When it was not, a missing agenda or minutes is
+   * unknown, not a fact, so the cell says "Not available" instead of "Not posted".
+   */
+  filesLoaded: boolean;
 }
 
-const { rows } = Astro.props;
+const { rows, filesLoaded } = Astro.props;
+const missing = filesLoaded ? "Not posted" : "Not available";
 ---
 
 {
@@ -28,7 +34,7 @@ const { rows } = Astro.props;
               {r.approximate && " (month)"}
             </td>
             <td role="cell" data-label="Agenda">
-              {r.agenda ? <a href={r.agenda.url}>Agenda</a> : <span class="soft">Not posted</span>}
+              {r.agenda ? <a href={r.agenda.url}>Agenda</a> : <span class="soft">{missing}</span>}
             </td>
             <td role="cell" data-label="Minutes">
               {r.minutes ? (
@@ -37,7 +43,7 @@ const { rows } = Astro.props;
                   {r.minutesDraft && " (draft)"}
                 </>
               ) : (
-                <span class="soft">Not posted</span>
+                <span class="soft">{missing}</span>
               )}
             </td>
             <td role="cell" data-label="Materials" class={r.materials.length === 0 ? "cell-empty" : undefined}>

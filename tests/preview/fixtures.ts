@@ -197,7 +197,6 @@ export function scenarios(): Scenario[] {
     ...next,
     isVirtual: false,
     location: "Arlington Central Library, Room 201",
-    agendaUrl: "https://docs.google.com/document/d/fixtureagenda/edit",
   };
   return [
     { slug: "home-virtual", meetings: [...past, next, ...rest], folders: folders() },

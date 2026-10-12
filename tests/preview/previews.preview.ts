@@ -26,7 +26,7 @@ const state = vi.hoisted(() => ({ meetings: [] as Meeting[], folders: {} as Reco
 
 vi.mock("../../src/lib/data", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/lib/data")>();
-  const { buildArchive } = await import("../../src/lib/archive");
+  const { buildArchive, currentBylaws } = await import("../../src/lib/archive");
   const { FIXTURE_NOW: now, FIXTURE_SETTINGS: settings } = await import("./fixtures");
   return {
     ...actual,
@@ -38,6 +38,7 @@ vi.mock("../../src/lib/data", async (importOriginal) => {
         calendar: { ok: true, meetings: state.meetings },
         folders: state.folders,
         rows: buildArchive(state.meetings, state.folders),
+        currentBylaws: currentBylaws(settings.drive.bylawsCurrentFileId, state.folders.bylaws),
       }) satisfies SiteData,
   };
 });

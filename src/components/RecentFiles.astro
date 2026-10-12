@@ -3,6 +3,7 @@ import type { DriveFile } from "../lib/drive";
 import { formatModifiedDate } from "../lib/time";
 
 interface Props {
+  /** Newest Drive modified time first (`recentFiles`): "updated", because an edit moves a file up too. */
   files: DriveFile[];
 }
 
@@ -11,8 +12,8 @@ const { files } = Astro.props;
 
 {
   files.length > 0 && (
-    <section class="stack" aria-labelledby="recently-added">
-      <h2 id="recently-added">Recently added</h2>
+    <section class="stack" aria-labelledby="recently-updated">
+      <h2 id="recently-updated">Recently updated</h2>
       <ul class="files" role="list">
         {files.map((f) => {
           const d = formatModifiedDate(f);

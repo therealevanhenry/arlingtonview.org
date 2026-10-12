@@ -6,13 +6,12 @@ import { lastUpdated, loadSiteData } from "../lib/data";
 import type { FolderResult } from "../lib/drive";
 
 const data = await loadSiteData();
-const { settings, folders } = data;
+const { folders, currentBylaws } = data;
 
-const currentId = settings.drive.bylawsCurrentFileId.trim();
-const currentBylawsUrl = currentId === "" ? undefined : `https://drive.google.com/file/d/${currentId}/view`;
-// The current PDF is linked above the list, so it is not repeated in it; Doc/PDF twins collapse to the PDF.
+// The current PDF (the configured file, or the newest PDF when that ID went stale; see `currentBylaws` in
+// archive.ts) is linked above the list, so it is not repeated in it; Doc/PDF twins collapse to the PDF.
 const bylaws: FolderResult = folders.bylaws.ok
-  ? { ...folders.bylaws, files: preferPdfTwins(folders.bylaws.files).filter((f) => f.id !== currentId) }
+  ? { ...folders.bylaws, files: preferPdfTwins(folders.bylaws.files).filter((f) => f.id !== currentBylaws?.id) }
   : folders.bylaws;
 
 // The one list the link row and the sections are both built from. Bylaws is the one special case (its slot).
@@ -44,9 +43,9 @@ const sections = [
         const result = s.id === "bylaws" ? bylaws : folders[s.folder];
         return (
           <FileList result={result} title={s.title} id={s.id} group={s.group}>
-            {s.id === "bylaws" && currentBylawsUrl !== undefined && (
+            {s.id === "bylaws" && currentBylaws !== undefined && (
               <p>
-                <a href={currentBylawsUrl}>Current bylaws (PDF)</a>
+                <a href={currentBylaws.url}>Current bylaws (PDF)</a>
               </p>
             )}
           </FileList>

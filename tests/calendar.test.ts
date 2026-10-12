@@ -5,7 +5,7 @@ import {
   loadCalendar,
   nextMeeting,
   parseIcs,
-  past,
+  placeLabel,
   subscribeLinks,
   upcoming,
   type Meeting,
@@ -37,7 +37,9 @@ describe("parseIcs (synthetic fixture)", () => {
   it("applies the moved instance", () => {
     const m = parseIcs(ics, now).find((x) => x.start.toISOString().startsWith("2026-09-29"));
     expect(m?.isVirtual).toBe(true);
-    expect(m?.agendaUrl).toMatch(/docs.google.com/);
+    // Its description holds a Google Docs link and a join link: neither is read.
+    expect(m).not.toHaveProperty("agendaUrl");
+    expect(JSON.stringify(m)).not.toContain("docs.google.com");
     expect(
       parseIcs(ics, now).some((x) => x.start.toISOString().startsWith("2026-09-23")),
     ).toBe(false);
@@ -65,11 +67,10 @@ describe("parseIcs (synthetic fixture)", () => {
     expect(JSON.stringify(meetings)).not.toContain("meet.google.com");
   });
 
-  it("drops a location that contains a URL and marks the meeting virtual", () => {
+  it("strips a URL out of the location and keeps the venue beside it", () => {
     const withUrl = ics.replace("LOCATION:Arlington Hall", "LOCATION:Room 2\\, https://zoom.us/j/123");
     const m = parseIcs(withUrl, now).find((x) => localDate(x.start) === "2026-10-28");
-    expect(m?.location).toBeUndefined();
-    expect(m?.isVirtual).toBe(true);
+    expect(m?.location).toBe("Room 2");
     expect(JSON.stringify(parseIcs(withUrl, now))).not.toContain("zoom.us");
   });
 
@@ -90,16 +91,13 @@ describe("selection helpers", () => {
     expect(nextMeeting(parseIcs(emptyIcs, now), now)).toBeUndefined();
   });
 
-  it("upcoming and past partition around now", () => {
+  it("upcoming is the next n meetings that have not ended, in order", () => {
     const meetings = parseIcs(ics, now);
     const up = upcoming(meetings, now, 3);
     expect(up).toHaveLength(3);
     expect(up.every((m) => m.end > now)).toBe(true);
     expect(up[0]?.start.getTime()).toBeLessThan(up[1]!.start.getTime());
-    const pa = past(meetings, now);
-    expect(pa.every((m) => m.end <= now)).toBe(true);
-    expect(pa[0]!.start.getTime()).toBeGreaterThan(pa[1]!.start.getTime());
-    expect(pa.length + meetings.filter((m) => m.end > now).length).toBe(meetings.length);
+    expect(up[0]).toBe(nextMeeting(meetings, now));
   });
 });
 
@@ -143,10 +141,13 @@ describe("parseIcs (live-shape fixture)", () => {
     expect(meetings.every((m) => m.isVirtual)).toBe(true);
   });
 
-  it("has no agendaUrl and leaks no conferencing link", () => {
-    expect(meetings.some((m) => m.agendaUrl !== undefined)).toBe(false);
+  it("carries nothing from the description: no agenda link, no conferencing link, no description", () => {
     expect(JSON.stringify(meetings)).not.toContain("meet.google.com");
-    for (const m of meetings) expect(m).not.toHaveProperty("description");
+    for (const m of meetings) {
+      expect(m).not.toHaveProperty("description");
+      expect(m).not.toHaveProperty("agendaUrl");
+      expect(Object.keys(m).sort()).toEqual(["end", "isVirtual", "start", "title", "uid"]);
+    }
   });
 });
 
@@ -309,5 +310,81 @@ describe("parseIcs cancellations and empty futures", () => {
     const meetings = parseIcs(body, later);
     expect(meetings).toHaveLength(2);
     expect(nextMeeting(meetings, later)).toBeUndefined();
+  });
+});
+
+describe("the description is never read", () => {
+  it("publishes no link, address, or text from it, whatever it holds", () => {
+    const body = wrap(
+      vevent(
+        "described",
+        "DTSTART:20261020T230000Z",
+        "DTEND:20261021T003000Z",
+        "LOCATION:Carver Community Center",
+        "DESCRIPTION:Agenda: https://docs.google.com/document/d/UNVETTED/edit\\nRecording https://drive.google.com/file/d/RECORDING/view\\nJoin https://meet.google.com/abc-defg-hij\\nQuestions to a.resident@example.org\\nDESCRIPTION-ONLY-TEXT",
+      ),
+    );
+    const [m] = parseIcs(body, new Date("2026-10-06T18:00:00Z"));
+    expect(m).toEqual({
+      uid: "described",
+      start: new Date("2026-10-20T23:00:00Z"),
+      end: new Date("2026-10-21T00:30:00Z"),
+      title: "Test",
+      location: "Carver Community Center",
+      isVirtual: false,
+    });
+    const text = JSON.stringify(m);
+    for (const leak of ["UNVETTED", "RECORDING", "docs.google.com", "drive.google.com", "meet.google.com", "example.org", "DESCRIPTION-ONLY-TEXT"]) {
+      expect(text, leak).not.toContain(leak);
+    }
+    expect(addToGoogleCalendarUrl(m)).not.toMatch(/UNVETTED|RECORDING|details=/);
+  });
+});
+
+describe("location, isVirtual, and placeLabel", () => {
+  /** The meeting parsed from an event with this LOCATION (ICS-escaped here), or with none. */
+  const at = (location?: string): Meeting => {
+    const escaped = location?.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\;");
+    const lines = ["DTSTART:20261020T230000Z", "DTEND:20261021T003000Z", ...(escaped === undefined ? [] : [`LOCATION:${escaped}`])];
+    const [m] = parseIcs(wrap(vevent("place", ...lines)), new Date("2026-10-06T18:00:00Z"));
+    return m;
+  };
+
+  it.each<[string, string | undefined, { location: string | undefined; isVirtual: boolean; label: string }]>([
+    ["no location", undefined, { location: undefined, isVirtual: true, label: "Virtual meeting" }],
+    ["a blank location", "   ", { location: undefined, isVirtual: true, label: "Virtual meeting" }],
+    ["a bare join URL", "https://meet.google.com/abc-defg-hij", { location: undefined, isVirtual: true, label: "Virtual meeting" }],
+    ["a join link written without a scheme", "zoom.us/j/1234567890?pwd=abc", { location: undefined, isVirtual: true, label: "Virtual meeting" }],
+    ["Virtual", "Virtual", { location: "Virtual", isVirtual: true, label: "Virtual meeting" }],
+    ["Google Meet", "Google Meet", { location: "Google Meet", isVirtual: true, label: "Virtual meeting" }],
+    ["a virtual term followed by 'meeting', in any case", "ONLINE meeting", { location: "ONLINE meeting", isVirtual: true, label: "Virtual meeting" }],
+    ["Zoom with its link", "Zoom: https://zoom.us/j/1234567890", { location: "Zoom", isVirtual: true, label: "Virtual meeting" }],
+    ["a venue", "Carver Community Center", { location: "Carver Community Center", isVirtual: false, label: "Carver Community Center" }],
+    [
+      "a hybrid meeting: the venue is kept and the meeting is also virtual",
+      "Carver Community Center (also on Zoom)",
+      { location: "Carver Community Center (also on Zoom)", isVirtual: true, label: "Carver Community Center (also on Zoom)" },
+    ],
+    ["a venue described with the word meet", "Meet at Carver", { location: "Meet at Carver", isVirtual: true, label: "Meet at Carver" }],
+    ["an address with a map link", "1415 S Queen St https://maps.example/x", { location: "1415 S Queen St", isVirtual: false, label: "1415 S Queen St" }],
+    ["an address with a map link in parentheses", "1415 S Queen St (https://maps.example/x)", { location: "1415 S Queen St", isVirtual: false, label: "1415 S Queen St" }],
+    ["a www link with no scheme", "Carver Community Center, www.example.org/carver", { location: "Carver Community Center", isVirtual: false, label: "Carver Community Center" }],
+    ["a venue between two links", "https://maps.example/x Carver Community Center; https://zoom.us/j/1", { location: "Carver Community Center", isVirtual: false, label: "Carver Community Center" }],
+    ["whole words only: 'meeting' and 'zoomed' are not virtual terms", "Community Meeting Room, Zoomed-in Annex", { location: "Community Meeting Room, Zoomed-in Annex", isVirtual: false, label: "Community Meeting Room, Zoomed-in Annex" }],
+  ])("%s", (_name, location, expected) => {
+    const m = at(location);
+    expect(m.location).toBe(expected.location);
+    expect(m.isVirtual).toBe(expected.isVirtual);
+    expect(placeLabel(m)).toBe(expected.label);
+    expect(JSON.stringify(m)).not.toMatch(/https?:|zoom\.us|meet\.google\.com|www\./);
+  });
+
+  it("placeLabel reads only the location text", () => {
+    const base = { uid: "u", start: new Date(0), end: new Date(1), title: "t" };
+    expect(placeLabel({ ...base, isVirtual: true })).toBe("Virtual meeting");
+    expect(placeLabel({ ...base, isVirtual: true, location: "  zoom   meeting " })).toBe("Virtual meeting");
+    expect(placeLabel({ ...base, isVirtual: true, location: "Meet" })).toBe("Virtual meeting");
+    expect(placeLabel({ ...base, isVirtual: false, location: "Library" })).toBe("Library");
+    expect(placeLabel({ ...base, isVirtual: true, location: "Virtual meeting room 3" })).toBe("Virtual meeting room 3");
   });
 });

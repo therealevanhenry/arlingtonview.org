@@ -1,7 +1,7 @@
 ---
 import type { ArchiveRow } from "../lib/archive";
 import { agendaFor } from "../lib/archive";
-import type { Meeting } from "../lib/calendar";
+import { placeLabel, type Meeting } from "../lib/calendar";
 import { formatMeetingMonthDay, formatMeetingTime, formatMeetingWeekday, localDate } from "../lib/time";
 
 interface Props {
@@ -37,7 +37,7 @@ for (const m of meetings) {
               </p>
               <p class="schedule-details">
                 <span>{formatMeetingTime(m.start, m.end)}</span>
-                <span class="soft">{m.isVirtual ? "Virtual meeting" : m.location}</span>
+                <span class="soft">{placeLabel(m)}</span>
                 {agenda !== undefined && <a href={agenda}>Agenda</a>}
               </p>
             </li>

@@ -48,7 +48,7 @@ const past = pastRows(rows, now);
     </section>
     <section class="stack" aria-labelledby="past">
       <h2 id="past">Past meetings</h2>
-      <ArchiveTable rows={past} />
+      <ArchiveTable rows={past} filesLoaded={folders.meetings.ok} />
       {
         folders.meetings.ok ? (
           <p>

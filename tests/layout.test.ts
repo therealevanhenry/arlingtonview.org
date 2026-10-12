@@ -5,6 +5,7 @@ import Footer from "../src/components/Footer.astro";
 import Header from "../src/components/Header.astro";
 import Base from "../src/layouts/Base.astro";
 import { getSettings } from "../src/lib/settings";
+import { formatCalendarDate } from "../src/lib/time";
 
 const ORIGIN = "https://arlingtonview.org";
 const FULL_TRACE_VIEWBOX = "0 0 371.8 392.3";
@@ -54,19 +55,28 @@ describe("Footer", () => {
     expect(html).not.toContain(FULL_TRACE_VIEWBOX);
   });
 
-  it("omits the last-updated line when no value is passed", async () => {
+  it("omits the documents-updated line when no value is passed", async () => {
     const html = await container.renderToString(Footer, {
       props: { contactEmail: "president@arlingtonview.org" },
     });
-    expect(html).not.toContain("Last updated");
+    expect(html).not.toContain("updated");
+    expect(html).not.toContain("<time");
   });
 
-  it("formats lastUpdated as a New York calendar date", async () => {
+  it("says Documents updated (the date is the newest Drive file's, not the page's), as a New York calendar date", async () => {
     // 02:30 UTC on October 7 is still the evening of October 6 in Arlington.
     const html = await container.renderToString(Footer, {
       props: { contactEmail: "president@arlingtonview.org", lastUpdated: "2026-10-07T02:30:00Z" },
     });
-    expect(html).toMatch(/Last updated\s*<time datetime="2026-10-07T02:30:00Z">October 6, 2026<\/time>/);
+    expect(html).toMatch(/Documents updated\s*<time datetime="2026-10-07T02:30:00Z">October 6, 2026<\/time>/);
+    expect(html).not.toContain("Last updated");
+  });
+
+  it("uses the shared calendar-date formatter", async () => {
+    for (const iso of ["2026-01-01T04:59:59Z", "2026-07-04T16:00:00Z", "2027-03-14T07:30:00Z"]) {
+      const html = await container.renderToString(Footer, { props: { contactEmail: "president@arlingtonview.org", lastUpdated: iso } });
+      expect(html, iso).toContain(`>${formatCalendarDate(new Date(iso))}</time>`);
+    }
   });
 
   it("fails loudly on an unparseable lastUpdated", async () => {

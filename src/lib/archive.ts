@@ -1,5 +1,6 @@
 import type { Meeting } from "./calendar";
 import type { DriveFile, FolderResult } from "./drive";
+import { privateNameReason } from "./privacy";
 import { localDate } from "./time";
 
 export type FileKind = "agenda" | "minutes" | "material";
@@ -41,10 +42,16 @@ const AGENDA = /\bagendas?\b/i;
 const MINUTES = /\b(?:minutes|mins)\b/i;
 const MONTH_FOLDER = /^(\d{2}) (\d{2})(?:\s|$)/;
 
+/**
+ * The one definition of a name that is never shown: it starts with `(OLD)` (the owner retired the
+ * file), or it holds an email address or a conferencing link (see privacy.ts; data.ts logs those).
+ */
+const isHiddenName = (name: string): boolean => HIDDEN.test(name) || privateNameReason(name) !== undefined;
+
 export function classify(file: DriveFile): { kind: FileKind; draft: boolean; hidden: boolean } {
   const { name } = file;
   const kind: FileKind = AGENDA.test(name) ? "agenda" : MINUTES.test(name) ? "minutes" : "material";
-  return { kind, draft: DRAFT.test(name), hidden: HIDDEN.test(name) };
+  return { kind, draft: DRAFT.test(name), hidden: isHiddenName(name) };
 }
 
 /** `YYYY-MM` of the nearest ancestor folder named like `26 10 October`. */
@@ -102,10 +109,25 @@ function rowsFromMeetings(meetings: Meeting[]): Map<string, WorkingRow> {
 
 const fillsSlot = (c: Candidate): boolean => c.kind !== "material";
 
-/** Rows for every exact-dated agenda or minutes file, then approximate rows for months that have none. */
+/**
+ * Rows that only files can supply. The calendar is the source of truth for meeting dates, so an
+ * exact-dated agenda or minutes file whose date matches no row gets a row of its own only when its
+ * month has NO calendar meeting (history from before the calendar) or TWO OR MORE (and it matches none
+ * of them). With exactly one calendar meeting in the month, the date in the name is taken to be wrong
+ * (e.g. the series' nominal date after the meeting was moved) and the file attaches to that meeting
+ * (`targetRow`). Then approximate rows for months that still have no row.
+ */
 function addFileRows(rows: Map<string, WorkingRow>, candidates: Candidate[]): void {
+  // Counted before any file row exists: at this point every row is a calendar meeting date.
+  const calendarMeetings = new Map<string, number>();
+  for (const date of rows.keys()) {
+    const month = date.slice(0, 7);
+    calendarMeetings.set(month, (calendarMeetings.get(month) ?? 0) + 1);
+  }
   for (const c of candidates) {
-    if (c.date !== undefined && c.tier === 0 && fillsSlot(c) && !rows.has(c.date)) rows.set(c.date, newRow(c.date, false));
+    if (c.date === undefined || c.tier !== 0 || !fillsSlot(c) || rows.has(c.date)) continue;
+    if (calendarMeetings.get(c.date.slice(0, 7)) === 1) continue;
+    rows.set(c.date, newRow(c.date, false));
   }
   const monthsWithRows = new Set([...rows.keys()].map((d) => d.slice(0, 7)));
   for (const c of candidates) {
@@ -200,15 +222,18 @@ export function pastRows(rows: ArchiveRow[], now: Date): ArchiveRow[] {
   return rows.filter((r) => r.date < today || (r.date === today && (r.meeting === undefined || r.meeting.end <= now)));
 }
 
-/** The Drive agenda for the meeting's date, else the link from the calendar description. */
+/**
+ * The agenda link for a meeting: the Drive agenda on the meeting's row, or nothing. The agenda file in
+ * the published Drive folder is the only source; nothing is taken from the calendar event.
+ */
 export function agendaFor(meeting: Meeting, rows: ArchiveRow[]): string | undefined {
   const date = localDate(meeting.start);
-  return rows.find((r) => r.date === date)?.agenda?.url ?? meeting.agendaUrl;
+  return rows.find((r) => r.date === date)?.agenda?.url;
 }
 
-/** The one definition of "visible": not a folder entry and not an `(OLD)` file. */
+/** The one definition of "visible": not a folder entry and not a hidden name (`isHiddenName`). */
 export function visibleFiles(files: DriveFile[]): DriveFile[] {
-  return files.filter((f) => !f.isFolder && !HIDDEN.test(f.name));
+  return files.filter((f) => !f.isFolder && !isHiddenName(f.name));
 }
 
 export function recentFiles(folders: FolderResult[], n: number): DriveFile[] {
@@ -256,3 +281,33 @@ export function preferPdfTwins(files: DriveFile[]): DriveFile[] {
 }
 
 const twinKey = (path: string[], base: string): string => `${JSON.stringify(path)}\u0000${base.toLowerCase()}`;
+
+const isPdf = (f: DriveFile): boolean => f.mimeType === "application/pdf" || /\.pdf$/i.test(f.name);
+
+/** Date in the name descending (undated last), then newest `modifiedTime`, then id. */
+const newestDocumentFirst = (a: DriveFile, b: DriveFile): number =>
+  compareText(b.meetingDate ?? "", a.meetingDate ?? "") || modifiedMs(b) - modifiedMs(a) || compareText(a.id, b.id);
+
+/**
+ * The file behind "Current bylaws (PDF)": `settings.drive.bylawsCurrentFileId`, unless the Bylaws
+ * folder listed and that ID is not among its top-level files (it went stale when the PDF was replaced).
+ * Then the newest visible top-level PDF is linked instead, and `note` says so for the build log.
+ * Undefined for a blank ID (no link). When the folder did not list, the configured ID is linked unchecked.
+ */
+export function currentBylaws(configuredId: string, folder: FolderResult): { id: string; url: string; note?: string } | undefined {
+  const id = configuredId.trim();
+  if (id === "") return undefined;
+  const configured = { id, url: `https://drive.google.com/file/d/${id}/view` };
+  if (!folder.ok) return configured;
+  const topLevel = folder.files.filter((f) => !f.isFolder && f.path.length === 0);
+  if (topLevel.some((f) => f.id === id)) return configured;
+  const [newest] = visibleFiles(topLevel).filter(isPdf).sort(newestDocumentFirst);
+  if (newest === undefined) {
+    return { ...configured, note: "drive.bylawsCurrentFileId is not in the Bylaws folder, and the folder has no PDF at its top level; the link is unchanged" };
+  }
+  return {
+    id: newest.id,
+    url: `https://drive.google.com/file/d/${newest.id}/view`,
+    note: `drive.bylawsCurrentFileId is not in the Bylaws folder; linking "${newest.name}" instead`,
+  };
+}

@@ -61,7 +61,7 @@ const home = vi.hoisted(() => ({
 
 vi.mock("../src/lib/data", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/data")>();
-  const { buildArchive: build } = await import("../src/lib/archive");
+  const { buildArchive: build, currentBylaws } = await import("../src/lib/archive");
   const down = { ok: false as const, folderUrl: "https://example.test/f", reason: "test" };
   return {
     ...actual,
@@ -79,6 +79,7 @@ vi.mock("../src/lib/data", async (importOriginal) => {
         calendar: home.calendarOk ? { ok: true, meetings: home.meetings } : { ok: false, reason: "test" },
         folders,
         rows: home.buildRows ? build(home.meetings, folders) : [],
+        currentBylaws: currentBylaws(home.settings.drive.bylawsCurrentFileId, folders.bylaws),
       };
     },
   };
@@ -100,8 +101,9 @@ const sample: Meeting = {
   end: new Date("2026-09-30T00:30:00Z"),
   title: "AVCA General Meeting",
   isVirtual: true,
-  agendaUrl: "https://docs.google.com/document/d/abc/edit",
 };
+/** The Drive agenda for the sample meeting, as `agendaFor` would hand it to the notice. */
+const AGENDA = "https://drive.google.com/file/d/sampleagenda/view";
 
 beforeAll(async () => {
   container = await AstroContainer.create();
@@ -150,7 +152,7 @@ describe("NextMeeting", () => {
   });
 
   it("shows date, time, Virtual, agenda link, and add-to-calendar", async () => {
-    const html = await container.renderToString(NextMeeting, { props: { meeting: sample, settings } });
+    const html = await container.renderToString(NextMeeting, { props: { meeting: sample, settings, agendaUrl: AGENDA } });
     expect(html).toContain("Tuesday");
     expect(html).toContain("September 29");
     expect(html).toContain("7:00 to 8:30 pm");
@@ -183,7 +185,7 @@ describe("NextMeeting", () => {
   });
 
   it("splits the notice by meaning: when and where, then how to attend", async () => {
-    const html = await container.renderToString(NextMeeting, { props: { meeting: sample, settings } });
+    const html = await container.renderToString(NextMeeting, { props: { meeting: sample, settings, agendaUrl: AGENDA } });
     const when = html.indexOf('class="notice-when"');
     const details = html.indexOf('class="notice-details');
     expect(when).toBeGreaterThan(-1);
@@ -214,8 +216,7 @@ describe("NextMeeting", () => {
   });
 
   it("leaves only the actions row on the right for an in-person meeting with no agenda", async () => {
-    const { agendaUrl: _omit, ...bare } = sample;
-    const meeting: Meeting = { ...bare, isVirtual: false, location: "Arlington View Community Center" };
+    const meeting: Meeting = { ...sample, isVirtual: false, location: "Arlington View Community Center" };
     const html = await container.renderToString(NextMeeting, { props: { meeting, settings } });
     const details = html.indexOf('class="notice-details');
     const left = html.slice(html.indexOf('class="notice-when"'), details);
@@ -267,15 +268,36 @@ describe("NextMeeting", () => {
     expect(html).not.toContain("Add to Google Calendar");
   });
 
-  it("prefers the agendaUrl prop and shows no agenda link when neither exists", async () => {
+  it("links the agenda only from the agendaUrl prop (the Drive agenda); a meeting carries no link of its own", async () => {
     const withProp = await container.renderToString(NextMeeting, {
       props: { meeting: sample, settings, agendaUrl: "https://drive.google.com/file/d/zzz/view" },
     });
-    expect(withProp).toContain("https://drive.google.com/file/d/zzz/view");
-    expect(withProp).not.toContain("docs.google.com/document/d/abc");
-    const { agendaUrl: _omit, ...bare } = sample;
-    const none = await container.renderToString(NextMeeting, { props: { meeting: bare, settings } });
+    expect(withProp).toContain('<a href="https://drive.google.com/file/d/zzz/view">Agenda</a>');
+    const none = await container.renderToString(NextMeeting, { props: { meeting: sample, settings } });
     expect(none).not.toContain("Agenda");
+    // A stray link on the meeting object (the removed calendar-description fallback) is ignored.
+    const stray = { ...sample, agendaUrl: "https://docs.google.com/document/d/unvetted/edit" } as Meeting;
+    const ignored = await container.renderToString(NextMeeting, { props: { meeting: stray, settings } });
+    expect(ignored).not.toContain("Agenda");
+    expect(ignored).not.toContain("unvetted");
+  });
+
+  it("shows the venue AND the virtual-link note for a hybrid meeting", async () => {
+    const meeting: Meeting = { ...sample, isVirtual: true, location: "Carver Community Center (also on Zoom)" };
+    const html = await container.renderToString(NextMeeting, { props: { meeting, settings } });
+    const details = html.indexOf('class="notice-details');
+    expect(html.slice(0, details)).toContain("Carver Community Center (also on Zoom)");
+    expect(html).not.toContain("Virtual meeting");
+    expect(html.slice(details)).toContain(settings.virtualLinkNote);
+    expect(html.slice(details)).toContain(`mailto:${settings.contactEmail}`);
+  });
+
+  it("prints Virtual meeting for a location that is only a virtual term", async () => {
+    for (const location of ["Virtual", "Google Meet", "Zoom meeting", "online"]) {
+      const html = await container.renderToString(NextMeeting, { props: { meeting: { ...sample, isVirtual: true, location }, settings } });
+      expect(spaced(html), location).toContain("7:00 to 8:30 pm Virtual meeting");
+      expect(html, location).toContain(settings.virtualLinkNote);
+    }
   });
 
   it("prints the location for an in-person meeting and no virtual note", async () => {
@@ -366,14 +388,12 @@ describe("MeetingList", () => {
     end: new Date("2026-10-28T00:30:00Z"),
     isVirtual: false,
     location: "Library",
-    agendaUrl: undefined,
   };
   const third: Meeting = {
     ...sample,
     uid: "c",
     start: new Date("2027-01-19T00:00:00Z"),
     end: new Date("2027-01-19T01:30:00Z"),
-    agendaUrl: undefined,
   };
 
   it("sets each meeting as a schedule item: date, then time, place, and the agenda link", async () => {
@@ -409,7 +429,7 @@ describe("MeetingList", () => {
   });
 
   it("puts a meeting late on December 31 in New York in that year's group", async () => {
-    const nye: Meeting = { ...sample, uid: "d", start: new Date("2027-01-01T02:00:00Z"), end: new Date("2027-01-01T03:30:00Z"), agendaUrl: undefined };
+    const nye: Meeting = { ...sample, uid: "d", start: new Date("2027-01-01T02:00:00Z"), end: new Date("2027-01-01T03:30:00Z") };
     const html = await container.renderToString(MeetingList, { props: { meetings: [nye], rows: [] } });
     expect(html).toMatch(/<h3[^>]*>2026<\/h3>/);
     expect(textOf(html)).toContain("Thursday, December 31");
@@ -418,6 +438,15 @@ describe("MeetingList", () => {
   it("shows an agenda link only when one is available", async () => {
     const html = await container.renderToString(MeetingList, { props: { meetings: [second], rows: [] } });
     expect(html).not.toContain("Agenda");
+  });
+
+  it("prints the place label: the location as written, or Virtual meeting when it names no place", async () => {
+    const hybrid: Meeting = { ...sample, uid: "h", isVirtual: true, location: "Carver Community Center (also on Zoom)" };
+    const meetOnly: Meeting = { ...second, uid: "g", isVirtual: true, location: "Google Meet" };
+    const html = await container.renderToString(MeetingList, { props: { meetings: [hybrid, meetOnly], rows: [] } });
+    expect(html).toContain("Carver Community Center (also on Zoom)");
+    expect(html).not.toContain("Google Meet");
+    expect(countOf(html, "Virtual meeting")).toBe(1);
   });
 });
 
@@ -458,7 +487,8 @@ describe("RecentFiles", () => {
 
   it("lists names with New York modified dates", async () => {
     const html = await container.renderToString(RecentFiles, { props: { files: [f] } });
-    expect(html).toContain("Recently added");
+    expect(html).toMatch(/<h2[^>]*>Recently updated<\/h2>/);
+    expect(html).not.toContain("Recently added");
     expect(html).toContain("Minutes 2026-09-29.pdf");
     expect(html).toContain("October 6, 2026");
     expect(html).toContain('href="https://drive.google.com/file/d/1/view"');
@@ -617,7 +647,7 @@ describe("ArchiveTable", () => {
   const base: ArchiveRow = { date: "2026-06-24", approximate: false, minutesDraft: false, materials: [] };
   const agenda = driveFile("AVCA Proposed Agenda 06.24.2026");
   const minutes = driveFile("AVCA 2026 June mtg mins");
-  const render = (rows: ArchiveRow[]) => container.renderToString(ArchiveTable, { props: { rows } });
+  const render = (rows: ArchiveRow[], filesLoaded = true) => container.renderToString(ArchiveTable, { props: { rows, filesLoaded } });
 
   it("renders nothing for no rows", async () => {
     expect((await render([])).trim()).toBe("");
@@ -638,9 +668,20 @@ describe("ArchiveTable", () => {
     expect(textOf(html)).toContain("Minutes (draft)");
   });
 
-  it("says Not posted when agenda or minutes are missing", async () => {
+  it("says Not posted when agenda or minutes are missing and the folder was read", async () => {
     const html = await render([base]);
     expect(countOf(html, "Not posted")).toBe(2);
+    expect(html).not.toContain("Not available");
+  });
+
+  it("says Not available, not Not posted, when the Drive folder was not loaded: missing is unknown, not a fact", async () => {
+    const deck = driveFile("Zoning deck 2026-06-24");
+    const html = await render([base, { ...base, date: "2026-05-26", materials: [deck] }], false);
+    expect(countOf(html, "Not available")).toBe(4);
+    expect(html).not.toContain("Not posted");
+    expect(html).toMatch(/<span class="soft">Not available<\/span>/);
+    // Materials from the Presentations folder can still be there.
+    expect(html).toContain("Zoning deck 2026-06-24</a>");
   });
 
   it("shows month and year with a (month) marker for approximate dates", async () => {
@@ -727,7 +768,7 @@ describe("meetings page", () => {
   });
 
   it("builds the past table from the archive and links the meetings folder once it loads", async () => {
-    const past: Meeting = { ...sample, uid: "past", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z"), agendaUrl: undefined };
+    const past: Meeting = { ...sample, uid: "past", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z") };
     const folders = {
       bylaws: downResult("b"),
       meetings: okResult("19POeuA29OJnWSE4oLLrT3bXyaVsmB298", [
@@ -747,10 +788,13 @@ describe("meetings page", () => {
     expect(rowDates).toEqual(["June 24, 2026"]);
     expect(html).toContain(`<a href="${FOLDER_URL("19POeuA29OJnWSE4oLLrT3bXyaVsmB298")}">Open folder in Google Drive</a>`);
     expect(html).not.toContain("The file list is not available");
+    // The folder was read, so a missing file is a fact.
+    expect(countOf(html, "Not posted")).toBe(1);
+    expect(html).not.toContain("Not available");
   });
 
   it("keeps the past table and swaps in a specific sentence when the meetings folder is down", async () => {
-    const past: Meeting = { ...sample, uid: "past3", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z"), agendaUrl: undefined };
+    const past: Meeting = { ...sample, uid: "past3", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z") };
     const folders = { bylaws: downResult("b"), meetings: downResult("m"), presentations: okResult("p", []), letters: downResult("l"), neighborhoodPlan: downResult("n") };
     const html = main(await render([past], { folders }));
     expect(html).toContain('role="table"');
@@ -758,6 +802,9 @@ describe("meetings page", () => {
     expect(html).not.toContain("The file list is not available");
     expect(countOf(html, "Open folder in Google Drive")).toBe(1);
     expect(countOf(html, FOLDER_URL("m"))).toBe(1);
+    // The folder was not read: the table must not claim the agenda and minutes were never posted.
+    expect(countOf(html, "Not available")).toBe(2);
+    expect(html).not.toContain("Not posted");
   });
 
   it("sets the rule as the lead and the virtual note as body text in a measure", async () => {
@@ -768,7 +815,7 @@ describe("meetings page", () => {
   });
 
   it("constrains the past table with the archive modifier", async () => {
-    const past: Meeting = { ...sample, uid: "past4", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z"), agendaUrl: undefined };
+    const past: Meeting = { ...sample, uid: "past4", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z") };
     const folders = { bylaws: downResult("b"), meetings: okResult("m", []), presentations: okResult("p", []), letters: downResult("l"), neighborhoodPlan: downResult("n") };
     const html = await render([past], { folders });
     expect(classTokens(html)).toContain("table-archive");
@@ -866,6 +913,23 @@ describe("documents page", () => {
     expect(countOf(html, "Open folder in Google Drive")).toBe(5);
     expect(countOf(html, "not available right now")).toBe(0);
     expect(html).not.toMatch(/survey/i);
+  });
+
+  it("follows the newest top-level PDF when bylawsCurrentFileId is not in the folder, and does not list it twice", async () => {
+    const replaced = driveFile("AVCA By-Laws (June 30th, 2027).pdf", [], { mimeType: PDF });
+    const previous = driveFile("AVCA By-Laws (June 24th, 2026).pdf", [], { mimeType: PDF });
+    const folders = {
+      bylaws: okResult("b", [previous, replaced, driveFile("Bylaws 2019.pdf", ["Old Bylaws"], { mimeType: PDF })]),
+      meetings: downResult("m"),
+      presentations: downResult("p"),
+      letters: downResult("l"),
+      neighborhoodPlan: downResult("n"),
+    };
+    const html = main(await render(folders));
+    expect(html).toContain(`<a href="https://drive.google.com/file/d/${replaced.id}/view">Current bylaws (PDF)</a>`);
+    expect(html).not.toContain(settings.drive.bylawsCurrentFileId);
+    expect(countOf(html, "AVCA By-Laws (June 30th, 2027).pdf")).toBe(0);
+    expect(countOf(html, "AVCA By-Laws (June 24th, 2026).pdf</a>")).toBe(1);
   });
 
   it("keeps one h1, no script, no new-tab links, and the Documents title", async () => {

@@ -1,5 +1,5 @@
 ---
-import { addToGoogleCalendarUrl, subscribeLinks, type Meeting } from "../lib/calendar";
+import { addToGoogleCalendarUrl, placeLabel, subscribeLinks, type Meeting } from "../lib/calendar";
 import type { Settings } from "../lib/settings";
 import { formatMeetingMonthDay, formatMeetingTime, formatMeetingWeekday } from "../lib/time";
 
@@ -7,20 +7,21 @@ interface Props {
   /** The next upcoming meeting, if any. Only parsed fields are printed, never free text. */
   meeting?: Meeting;
   settings: Settings;
-  /** Overrides `meeting.agendaUrl` (the Drive agenda for that date). */
+  /** The Drive agenda for the meeting's date (`agendaFor`). The only source of the Agenda link. */
   agendaUrl?: string;
 }
 
-const { meeting, settings, agendaUrl } = Astro.props;
+const { meeting, settings, agendaUrl: agenda } = Astro.props;
 const calendarId = settings.calendarId.trim();
 const subscribe = calendarId === "" ? undefined : subscribeLinks(calendarId);
 const mailto = `mailto:${settings.contactEmail}`;
-const agenda = agendaUrl ?? meeting?.agendaUrl;
 ---
 
 {/*
   The home hero: a posted meeting notice in two zones. First, when and where (the date lockup with the
   time and place under it, or the standing rule); second, how to attend (the note, the agenda, the actions).
+  The place is the location as written, or "Virtual meeting" when it names no place (placeLabel). The
+  virtual-link note shows whenever the meeting is virtual, so a hybrid meeting gets the venue and the note.
 */}
 <section class="notice notice-hero cornice" aria-labelledby="next-meeting">
   <h2 class="notice-heading" id="next-meeting">Next meeting</h2>
@@ -35,7 +36,7 @@ const agenda = agendaUrl ?? meeting?.agendaUrl;
         </p>
         <div class="notice-meta">
           <p class="notice-time">{formatMeetingTime(meeting.start, meeting.end)}</p>
-          <p>{meeting.isVirtual ? "Virtual meeting" : meeting.location}</p>
+          <p>{placeLabel(meeting)}</p>
         </div>
       </div>
     ) : (

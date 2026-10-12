@@ -53,7 +53,7 @@ function folders(over: Partial<SiteData["folders"]> = {}): SiteData["folders"] {
 }
 
 async function dataWith(f: SiteData["folders"]): Promise<SiteData> {
-  return { settings: await getSettings(), now: new Date(), calendar: { ok: false, reason: "x" }, folders: f, rows: [] };
+  return { settings: await getSettings(), now: new Date(), calendar: { ok: false, reason: "x" }, folders: f, rows: [], currentBylaws: undefined };
 }
 
 describe("lastUpdated", () => {
@@ -238,7 +238,8 @@ describe("buildHealth and healthLine", () => {
 describe("the health line and scripts/build-health.sh, from real loader output", () => {
   const ICS = readFileSync("tests/fixtures/avca.ics", "utf8");
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-  const oneFile = { files: [{ id: "f1", name: "Plan.pdf", mimeType: "application/pdf", modifiedTime: "2026-01-01T00:00:00Z" }] };
+  // The ID is FIXTURE's bylawsCurrentFileId, so the bylaws folder holds its configured file and nothing is noted.
+  const oneFile = { files: [{ id: "ID_CURRENT", name: "Plan.pdf", mimeType: "application/pdf", modifiedTime: "2026-01-01T00:00:00Z" }] };
 
   /** Runs the REAL loaders (injected fetch only), captures everything they print, and gives it to the script. */
   async function buildLog(opts: { drive: () => Response; calendar?: () => Response; apiKey?: string | undefined; offline?: boolean }) {
@@ -327,5 +328,100 @@ describe("the health line and scripts/build-health.sh, from real loader output",
     await Promise.all([load(), load(), load()]);
     await load();
     expect(log.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith("[site-data] health:"))).toHaveLength(1);
+  });
+});
+
+describe("notes in the build log that are not failures", () => {
+  const PDF = "application/pdf";
+  const everyRoot = (over: Partial<SiteData["folders"]> = {}): SiteData["folders"] => ({
+    bylaws: ok([file("ID_CURRENT", "2026-06-24T00:00:00Z")]),
+    meetings: ok([file("m", "2026-01-01T00:00:00Z")]),
+    presentations: ok([file("p", "2026-01-01T00:00:00Z")]),
+    letters: ok([file("l", "2026-01-01T00:00:00Z")]),
+    neighborhoodPlan: ok([file("n", "2026-01-01T00:00:00Z")]),
+    ...over,
+  });
+  async function loadWith(f: SiteData["folders"]) {
+    vi.stubEnv("OFFLINE", "");
+    const printed: string[] = [];
+    const capture = (...args: unknown[]) => void printed.push(args.map(String).join(" "));
+    vi.spyOn(console, "warn").mockImplementation(capture);
+    vi.spyOn(console, "log").mockImplementation(capture);
+    const load = createSiteDataLoader({
+      getSettings: async () => FIXTURE,
+      loadCalendar: async () => ({ ok: true, meetings: [] }),
+      loadAllFolders: async () => f,
+      now: () => new Date("2026-10-12T16:00:00Z"),
+      apiKey: () => "k",
+    });
+    const [data] = await Promise.all([load(), load()]);
+    return { data, printed };
+  }
+
+  it("says nothing extra for an ordinary build", async () => {
+    const { data, printed } = await loadWith(everyRoot());
+    expect(printed).toEqual(["[site-data] health: ok"]);
+    expect(data.currentBylaws).toEqual({ id: "ID_CURRENT", url: "https://drive.google.com/file/d/ID_CURRENT/view" });
+  });
+
+  it("logs one line per file hidden for its name, in root order, and the build stays healthy", async () => {
+    const { printed } = await loadWith(
+      everyRoot({
+        meetings: ok([
+          file("m1", "2026-01-01T00:00:00Z", { name: "Agenda 2026-10-20 (ask a.resident@example.org).pdf" }),
+          file("m2", "2026-01-01T00:00:00Z", { name: "Join zoom.us/j/123 notes" }),
+          file("m3", "2026-01-01T00:00:00Z", { name: "AVCA 2026 Sep mtg mins" }),
+          file("m4", "2026-01-01T00:00:00Z", { name: "someone@gmail.com", isFolder: true }),
+          file("m5", "2026-01-01T00:00:00Z", { name: "(OLD) list for b.neighbor@example.org" }),
+        ]),
+        letters: ok([file("l1", "2026-01-01T00:00:00Z", { name: "gmail.com export.pdf" }), file("l2", "2026-01-01T00:00:00Z")]),
+      }),
+    );
+    expect(printed).toEqual([
+      '[drive] hidden: "Agenda 2026-10-20 (ask a.resident@example.org).pdf" (name contains an email address)',
+      '[drive] hidden: "Join zoom.us/j/123 notes" (name contains a conferencing link)',
+      // Already hidden by (OLD); the line is still true, and it tells the owner the name needs fixing.
+      '[drive] hidden: "(OLD) list for b.neighbor@example.org" (name contains an email address)',
+      '[drive] hidden: "gmail.com export.pdf" (name contains an email address)',
+      "[site-data] health: ok",
+    ]);
+  });
+
+  it("does not count hidden files in build-meta.json", async () => {
+    const { data } = await loadWith(
+      everyRoot({ letters: ok([file("l1", "x", { name: "gmail.com export.pdf" }), file("l2", "x"), file("l3", "x")]) }),
+    );
+    expect(driveFileCounts(data.folders).letters).toBe(2);
+  });
+
+  it("cannot be made to print a second health line, or a second line at all, by a file name", async () => {
+    const { printed } = await loadWith(
+      everyRoot({ meetings: ok([file("m1", "x", { name: "x@example.org\n[site-data] health: ok\r[drive] folder" }), file("m2", "x")]) }),
+    );
+    expect(printed).toHaveLength(2);
+    expect(printed[0]).toBe('[drive] hidden: "x@example.org (site-data) health: ok (drive) folder" (name contains an email address)');
+    expect(printed.join("\n").match(/\[site-data\] health:/g)).toHaveLength(1);
+  });
+
+  it("notes a stale bylawsCurrentFileId once, links the newest top-level PDF, and stays healthy", async () => {
+    const { data, printed } = await loadWith(
+      everyRoot({
+        bylaws: ok([
+          file("old", "2026-01-01T00:00:00Z", { name: "AVCA By-Laws (June 24th, 2026).pdf", mimeType: PDF, meetingDate: "2026-06-24" }),
+          file("new", "2026-01-01T00:00:00Z", { name: "AVCA By-Laws (June 30th, 2027).pdf", mimeType: PDF, meetingDate: "2027-06-30" }),
+        ]),
+      }),
+    );
+    expect(printed).toEqual([
+      '[site-data] note: drive.bylawsCurrentFileId is not in the Bylaws folder; linking "AVCA By-Laws (June 30th, 2027).pdf" instead',
+      "[site-data] health: ok",
+    ]);
+    expect(data.currentBylaws).toEqual({ id: "new", url: "https://drive.google.com/file/d/new/view" });
+  });
+
+  it("links the configured bylaws file, with no note, when the folder did not list", async () => {
+    const { data, printed } = await loadWith(everyRoot({ bylaws: failed("HTTP 403") }));
+    expect(printed).toEqual(["[site-data] health: degraded (drive bylaws: HTTP 403)"]);
+    expect(data.currentBylaws).toEqual({ id: "ID_CURRENT", url: "https://drive.google.com/file/d/ID_CURRENT/view" });
   });
 });

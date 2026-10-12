@@ -1,6 +1,7 @@
-import { buildArchive, visibleFiles, type ArchiveRow } from "./archive";
+import { buildArchive, currentBylaws, visibleFiles, type ArchiveRow } from "./archive";
 import { loadCalendar, type CalendarResult } from "./calendar";
 import { DRIVE_ROOTS, loadAllFolders, type DriveRoot, type FolderResult } from "./drive";
+import { privateNameReason } from "./privacy";
 import { getSettings, type Settings } from "./settings";
 import { nowInNewYork } from "./time";
 
@@ -11,6 +12,8 @@ export type SiteData = {
   folders: Awaited<ReturnType<typeof loadAllFolders>>;
   /** `buildArchive` over every calendar meeting (none when the calendar failed), computed once. */
   rows: ArchiveRow[];
+  /** The file behind "Current bylaws (PDF)" (`currentBylaws` in archive.ts); undefined when the ID is blank. */
+  currentBylaws: { id: string; url: string } | undefined;
 };
 
 export type SiteDataDeps = {
@@ -104,6 +107,14 @@ export function buildMetaJson(folders: Record<DriveRoot, FolderResult>): string 
   return `${JSON.stringify({ driveFileCounts: driveFileCounts(folders) })}\n`;
 }
 
+/**
+ * A Drive file name as it may be printed in the build log: on one line, and with square brackets
+ * shown as parentheses, so no file name can pass for one of the log's own `[...]` lines (the health
+ * line above all).
+ */
+const logName = (name: string): string =>
+  name.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\[/g, "(").replace(/\]/g, ")").replace(/\s+/g, " ").trim();
+
 /** A loader that fetches once and hands every caller the same promise. Injectable for tests. */
 export function createSiteDataLoader(deps: SiteDataDeps = defaultDeps): () => Promise<SiteData> {
   let memo: Promise<SiteData> | undefined;
@@ -122,11 +133,23 @@ export function createSiteDataLoader(deps: SiteDataDeps = defaultDeps): () => Pr
       if (!calendar.ok && settings.calendarId.trim() !== "" && !offline) {
         console.warn(`[calendar] not loaded: ${calendar.reason}; the meetings list will be empty`);
       }
+      // Not failures: a file left out because its name holds an email address or a conferencing link
+      // (`visibleFiles` hides it everywhere), and a bylaws file ID that has gone stale.
+      for (const root of DRIVE_ROOTS) {
+        const folder = folders[root];
+        if (!folder.ok) continue;
+        for (const file of folder.files) {
+          const reason = file.isFolder ? undefined : privateNameReason(file.name);
+          if (reason !== undefined) console.warn(`[drive] hidden: "${logName(file.name)}" (${reason})`);
+        }
+      }
+      const bylaws = currentBylaws(settings.drive.bylawsCurrentFileId, folders.bylaws);
+      if (bylaws?.note !== undefined) console.warn(`[site-data] note: ${logName(bylaws.note)}`);
       // For scripts/build-health.sh: exactly one line per build, after every loader has finished.
       console.log(healthLine(buildHealth(settings, calendar, folders, offline)));
       const meetings = calendar.ok ? calendar.meetings : [];
       const rows = buildArchive(meetings, { meetings: folders.meetings, presentations: folders.presentations });
-      return { settings, now, calendar, folders, rows };
+      return { settings, now, calendar, folders, rows, currentBylaws: bylaws && { id: bylaws.id, url: bylaws.url } };
     })();
     return memo;
   };

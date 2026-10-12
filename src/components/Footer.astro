@@ -1,10 +1,15 @@
 ---
 import Mark from "../assets/logo-small.svg";
+import { formatCalendarDate } from "../lib/time";
 
 interface Props {
   /** Role address shown as the contact link. Never a personal address. */
   contactEmail: string;
-  /** ISO timestamp of the newest content. Omit it and no "Last updated" line renders. */
+  /**
+   * ISO timestamp of the newest file in the Drive folders (`lastUpdated` in data.ts). Printed as
+   * "Documents updated <date>": it says nothing about the page text, which comes from the repository.
+   * Omit it and the line is not rendered.
+   */
   lastUpdated?: string;
 }
 
@@ -17,12 +22,7 @@ function formatNewYorkDate(iso: string): string {
   if (Number.isNaN(date.getTime())) {
     throw new Error(`Footer: lastUpdated is not a valid ISO timestamp: "${iso}"`);
   }
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(date);
+  return formatCalendarDate(date);
 }
 
 const lastUpdatedText = lastUpdated === undefined ? undefined : formatNewYorkDate(lastUpdated);
@@ -37,7 +37,7 @@ const lastUpdatedText = lastUpdated === undefined ? undefined : formatNewYorkDat
       {
         lastUpdatedText !== undefined && (
           <li>
-            Last updated <time datetime={lastUpdated}>{lastUpdatedText}</time>
+            Documents updated <time datetime={lastUpdated}>{lastUpdatedText}</time>
           </li>
         )
       }
