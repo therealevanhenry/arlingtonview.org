@@ -13,9 +13,17 @@ describe("settingsSchema", () => {
     expect(() => settingsSchema.parse({ siteName: "x" })).toThrow();
   });
 
-  it("accepts the committed settings file", async () => {
+  it("accepts the committed settings file, and its siteUrl is https", async () => {
+    // Rules only: the committed values are owner-edited content and are not pinned here.
     const settings = settingsSchema.parse(await load("settings.yaml"));
-    expect(settings.contactEmail).toBe("president@arlingtonview.org");
+    expect(settings.siteUrl, "src/content/settings.yaml: siteUrl must start with https://").toMatch(/^https:\/\//);
+    expect(settings.contactEmail, "src/content/settings.yaml: contactEmail must be an email address").toMatch(/^[^@\s]+@[^@\s]+\.[^@\s]+$/);
+  });
+
+  it("requires contactEmail to be an email address", async () => {
+    const settings = (await load("settings.yaml")) as Record<string, unknown>;
+    expect(() => settingsSchema.parse({ ...settings, contactEmail: "not an email" })).toThrow();
+    expect(() => settingsSchema.parse({ ...settings, contactEmail: "board@example.org" })).not.toThrow();
   });
 
   it("rejects an extra drive key", async () => {
@@ -85,14 +93,22 @@ describe("parseContent error messages", () => {
 });
 
 describe("isConfigured", () => {
-  it("reports joinFormUrl blank and everything else set for the committed file", async () => {
+  it("reports each key as set or blank, from the values given", async () => {
     const settings = settingsSchema.parse(await load("settings.yaml"));
-    const status = isConfigured(settings);
-    expect(status.joinFormUrl).toBe(false);
+    const filled: Settings = {
+      ...settings,
+      calendarId: "cal@group.calendar.google.com",
+      joinFormUrl: "https://forms.example.org/join",
+      drive: Object.fromEntries(Object.keys(settings.drive).map((k) => [k, `id-${k}`])) as Settings["drive"],
+    };
+    const status = isConfigured(filled);
+    expect(status.joinFormUrl).toBe(true);
     expect(status.calendarId).toBe(true);
-    for (const key of Object.keys(settings.drive)) {
+    for (const key of Object.keys(filled.drive)) {
       expect(status.drive[key as keyof typeof status.drive], `drive.${key}`).toBe(true);
     }
+    const blank = isConfigured({ ...filled, joinFormUrl: "" });
+    expect(blank.joinFormUrl).toBe(false);
   });
 
   it("treats whitespace-only values as blank", async () => {
@@ -150,14 +166,9 @@ describe("boardSchema", () => {
 
 describe("resourcesSchema", () => {
   it("accepts the committed resources file", async () => {
-    const { groups } = resourcesSchema.parse(await load("resources.yaml"));
-    expect(groups.map((g) => g.title)).toEqual([
-      "Report and get help",
-      "Services",
-      "County government",
-      "Columbia Pike and civic",
-    ]);
-    expect(groups.map((g) => g.links.length)).toEqual([4, 7, 5, 4]);
+    // Parses against the strict schema; the groups, labels, and counts are owner-edited and not pinned.
+    const raw = await load("resources.yaml");
+    expect(() => resourcesSchema.parse(raw)).not.toThrow();
   });
 
   it("starts every resource URL with https://", async () => {
@@ -175,14 +186,10 @@ describe("resourcesSchema", () => {
 });
 
 describe("loaders in plain Vitest (type import must not break unit tests)", () => {
-  it("getSettings returns the committed settings", async () => {
-    const settings = await getSettings();
-    expect(settings.contactEmail).toBe("president@arlingtonview.org");
-  });
-
-  it("getBoard and getResources return parsed data", async () => {
-    expect((await getBoard()).officers.length).toBeGreaterThan(0);
-    expect((await getResources()).length).toBe(4);
+  it("the loaders accept the committed files (an invalid edit fails here, naming the file and field)", async () => {
+    await expect(getSettings()).resolves.toBeDefined();
+    await expect(getBoard()).resolves.toBeDefined();
+    await expect(getResources()).resolves.toBeDefined();
   });
 });
 

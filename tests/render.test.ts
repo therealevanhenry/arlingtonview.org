@@ -16,7 +16,7 @@ import type { Meeting } from "../src/lib/calendar";
 import { nextMeeting } from "../src/lib/calendar";
 import type { DriveFile } from "../src/lib/drive";
 import { withBase } from "../src/lib/paths";
-import { getBoard, getResources, getSettings, type Board, type Settings } from "../src/lib/settings";
+import { getBoard, getResources, type Board, type Settings } from "../src/lib/settings";
 import History from "../src/pages/about/history.astro";
 import Documents from "../src/pages/documents.astro";
 import { formatTermMonth } from "../src/lib/time";
@@ -32,6 +32,27 @@ import type { FolderResult } from "../src/lib/drive";
 // The home page reads everything through `loadSiteData`. Swap in a fixed calendar (set per test through
 // `home.meetings`) and unreachable Drive folders, so the page renders without the network or the clock.
 const home = vi.hoisted(() => ({
+  // Settings are defined here, not read from src/content/settings.yaml: these tests check how pages use
+  // settings, and an owner editing that file must never fail them.
+  settings: {
+    siteName: "Fixture Association",
+    shortName: "FA",
+    siteUrl: "https://fixture.example.org",
+    contactEmail: "board@fixture.example.org",
+    calendarId: "fixture-calendar@group.calendar.google.com",
+    meetingRule: "Meetings are held on a fixture schedule, unless otherwise noted.",
+    virtualLinkNote: "The virtual meeting link is sent by email. Write to us if you need it.",
+    joinFormUrl: "",
+    drive: {
+      bylaws: "fixture-bylaws",
+      bylawsCurrentFileId: "FIXTURECURRENTFILEID",
+      meetings: "fixture-meetings",
+      presentations: "fixture-presentations",
+      letters: "fixture-letters",
+      neighborhoodPlan: "fixture-plan",
+      history: "fixture-history",
+    },
+  } as import("../src/lib/settings").Settings,
   meetings: [] as Meeting[],
   calendarOk: true,
   folders: undefined as Record<string, FolderResult> | undefined,
@@ -40,7 +61,6 @@ const home = vi.hoisted(() => ({
 
 vi.mock("../src/lib/data", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/data")>();
-  const { getSettings: readSettings } = await import("../src/lib/settings");
   const { buildArchive: build } = await import("../src/lib/archive");
   const down = { ok: false as const, folderUrl: "https://example.test/f", reason: "test" };
   return {
@@ -54,7 +74,7 @@ vi.mock("../src/lib/data", async (importOriginal) => {
         neighborhoodPlan: down,
       }) as import("../src/lib/data").SiteData["folders"];
       return {
-        settings: await readSettings(),
+        settings: home.settings,
         now: new Date("2026-09-01T12:00:00Z"),
         calendar: home.calendarOk ? { ok: true, meetings: home.meetings } : { ok: false, reason: "test" },
         folders,
@@ -85,7 +105,7 @@ const sample: Meeting = {
 
 beforeAll(async () => {
   container = await AstroContainer.create();
-  settings = await getSettings();
+  settings = home.settings;
 });
 
 const hrefs = (html: string): string[] => [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
@@ -743,8 +763,8 @@ describe("meetings page", () => {
   it("sets the rule as the lead and the virtual note as body text in a measure", async () => {
     const html = main(await render([upcomingOne]));
     expect(html).toMatch(new RegExp(`<p class="lead">\\s*${settings.meetingRule.replace(/[.]/g, "\\.")}\\s*</p>`));
-    expect(html).toMatch(/<p class="measure">\s*The virtual meeting link/);
-    expect(html.indexOf('class="lead"')).toBeLessThan(html.indexOf("The virtual meeting link"));
+    expect(html).toMatch(new RegExp(`<p class="measure">\\s*${settings.virtualLinkNote.replace(/[.]/g, "\\.")}`));
+    expect(html.indexOf('class="lead"')).toBeLessThan(html.indexOf(settings.virtualLinkNote));
   });
 
   it("constrains the past table with the archive modifier", async () => {
@@ -864,15 +884,15 @@ describe("BoardTable", () => {
   const board: Board = {
     term: { start: "2026-09", end: "2028-08" },
     officers: [
-      { role: "President Emeritus", name: "Ron Greene", kind: "honorary" },
-      { role: "ArNAC Representative", name: "Carter Echols", kind: "appointed" },
-      { role: "President", name: "Evan Henry", kind: "elected" },
+      { role: "President Emeritus", name: "C. Example", kind: "honorary" },
+      { role: "ArNAC Representative", name: "D. Sample", kind: "appointed" },
+      { role: "President", name: "A. Resident", kind: "elected" },
       { role: "Parliamentarian", name: "Vacant", kind: "elected" },
     ],
     blockCaptains: [
-      { block: 1, names: ["Carter Echols"] },
+      { block: 1, names: ["D. Sample"] },
       { block: 4, names: [] },
-      { block: 7, names: ["Linda Briggs", "Patricia Tillman-Talbert"] },
+      { block: 7, names: ["E. Person", "F. Person"] },
     ],
   };
   const email = "president@example.test";
@@ -891,8 +911,8 @@ describe("BoardTable", () => {
   it("groups officers as Elected officers, Appointed, Honorary, in that order", async () => {
     const html = await render(board);
     expect(headings(html, 3)).toEqual(["Elected officers", "Appointed", "Honorary"]);
-    expect(html.indexOf("Evan Henry")).toBeLessThan(html.indexOf("Carter Echols"));
-    expect(html.indexOf("Carter Echols")).toBeLessThan(html.indexOf("Ron Greene"));
+    expect(html.indexOf("A. Resident")).toBeLessThan(html.indexOf("D. Sample"));
+    expect(html.indexOf("D. Sample")).toBeLessThan(html.indexOf("C. Example"));
   });
 
   it("omits a group with no members", async () => {
@@ -903,7 +923,7 @@ describe("BoardTable", () => {
 
   it("lists each role with its name, and marks a vacant office", async () => {
     const html = await render(board);
-    expect(html).toMatch(/<dt[^>]*>\s*President\s*<\/dt>\s*<dd[^>]*>\s*Evan Henry\s*<\/dd>/);
+    expect(html).toMatch(/<dt[^>]*>\s*President\s*<\/dt>\s*<dd[^>]*>\s*A. Resident\s*<\/dd>/);
     expect(html).toMatch(/<dt[^>]*>\s*Parliamentarian\s*<\/dt>\s*<dd[^>]*>\s*<span class="soft">Vacant<\/span>/);
   });
 
@@ -911,9 +931,9 @@ describe("BoardTable", () => {
     const html = await render(board);
     expect(headings(html, 2)).toContain("Block captains");
     const text = spaced(html);
-    expect(text).toContain("Block 1 Carter Echols");
+    expect(text).toContain("Block 1 D. Sample");
     expect(text).toContain("Block 4 Vacant");
-    expect(text).toContain("Block 7 Linda Briggs, Patricia Tillman-Talbert");
+    expect(text).toContain("Block 7 E. Person, F. Person");
     expect(text).toContain("Some blocks need a captain. If you are interested in serving, contact the president at");
     expect(html).toContain(`<a href="mailto:${email}">${email}</a>`);
   });
@@ -922,47 +942,29 @@ describe("BoardTable", () => {
     const html = await render({
       ...board,
       officers: board.officers.filter((o) => o.name !== "Vacant"),
-      blockCaptains: [{ block: 1, names: ["Carter Echols"] }],
+      blockCaptains: [{ block: 1, names: ["D. Sample"] }],
     });
     expect(html).not.toContain("need a captain");
     expect(html).not.toContain("mailto:");
     expect(html).not.toContain("Vacant");
   });
 
-  it("pins the committed roster: the owner's nine officers and seven blocks, in order", async () => {
-    const real = await getBoard();
-    expect(real.term).toBeUndefined();
-    expect(real.officers).toEqual([
-      { role: "President", name: "Evan Henry", kind: "elected" },
-      { role: "Vice President", name: "Craig Syphax", kind: "elected" },
-      { role: "Secretary", name: "Cameron Fletcher", kind: "elected" },
-      { role: "Treasurer", name: "Linda Briggs", kind: "elected" },
-      { role: "Parliamentarian", name: "Vacant", kind: "elected" },
-      { role: "Chaplain", name: "Wilbur Briggs", kind: "elected" },
-      { role: "Public Relations Officer", name: "Vacant", kind: "elected" },
-      { role: "Arlington Neighborhoods Advisory Committee (ArNAC) Representative", name: "Carter Echols", kind: "appointed" },
-      { role: "President Emeritus", name: "Ron Greene", kind: "honorary" },
-    ]);
-    expect(real.blockCaptains).toEqual([
-      { block: 1, names: ["Carter Echols"] },
-      { block: 2, names: ["Evan Henry"] },
-      { block: 3, names: ["Cameron Fletcher"] },
-      { block: 4, names: [] },
-      { block: 5, names: [] },
-      { block: 6, names: [] },
-      { block: 7, names: ["Linda Briggs", "Patricia Tillman-Talbert"] },
-    ]);
-  });
-
-  it("renders the committed roster exactly as given", async () => {
+  it("renders whatever roster is committed, without pinning it", async () => {
+    // The committed file is owner-edited content: assert the rules (grouping, vacancies, term), not the values.
     const real = await getBoard();
     const html = await container.renderToString(BoardTable, { props: { board: real, contactEmail: settings.contactEmail } });
-    const text = spaced(html);
-    expect(headings(html, 3)).toEqual(["Elected officers", "Appointed", "Honorary"]);
+    // Names such as "O'Brien" are escaped in markup; compare the decoded text.
+    const text = spaced(html).replace(/&#39;|&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+    const expectedHeadings = [
+      ["elected", "Elected officers"],
+      ["appointed", "Appointed"],
+      ["honorary", "Honorary"],
+    ].filter(([kind]) => real.officers.some((o) => o.kind === kind)).map(([, title]) => title);
+    expect(headings(html, 3)).toEqual(expectedHeadings);
     for (const o of real.officers) expect(text).toContain(`${o.role} ${o.name}`);
-    expect(text).toContain("Block 7 Linda Briggs, Patricia Tillman-Talbert");
-    expect(text).toContain("need a captain");
-    expect(text).not.toContain("Term:");
+    for (const b of real.blockCaptains) expect(text).toContain(`Block ${b.block} ${b.names.length === 0 ? "Vacant" : b.names.join(", ")}`);
+    expect(text.includes("need a captain")).toBe(real.blockCaptains.some((b) => b.names.length === 0));
+    expect(text.includes("Term:")).toBe(real.term !== undefined);
   });
 });
 
@@ -977,10 +979,16 @@ describe("LinkGroups", () => {
     expect(html).not.toContain("target=");
     expect(html).not.toContain("tel:");
     expect(html).not.toContain("<script");
-    const text = spaced(html);
-    expect(text).toContain("Police non-emergency 703-558-2222");
-    expect(text).toContain("Water and sewer emergency 703-228-6555");
-    expect(html).not.toMatch(/<a[^>]*>[^<]*703-/);
+  });
+
+  it("shows a note as plain text beside its link, never inside the link or as a tel: link", async () => {
+    const groups = [
+      { title: "G", links: [{ label: "Report a thing", url: "https://example.org/a", note: "555-0100" }, { label: "Plain", url: "https://example.org/b" }] },
+    ];
+    const html = await container.renderToString(LinkGroups, { props: { groups } });
+    expect(spaced(html)).toContain("Report a thing 555-0100");
+    expect(html).not.toMatch(/<a[^>]*>[^<]*555-/);
+    expect(html).not.toContain("tel:");
   });
 });
 

@@ -8,8 +8,33 @@
 import type { Meeting } from "../../src/lib/calendar";
 import type { DriveFile, DriveRoot, FolderResult } from "../../src/lib/drive";
 import { parseMeetingDate } from "../../src/lib/meetingDate";
+import type { Settings } from "../../src/lib/settings";
 
 export const FIXTURE_NOW = new Date("2026-10-12T16:00:00Z");
+
+/**
+ * Settings for the previews. Invented, not read from src/content/settings.yaml: owner edits to that file
+ * must never change (or break) the previews.
+ */
+export const FIXTURE_SETTINGS: Settings = {
+  siteName: "Fixture Association",
+  shortName: "FA",
+  siteUrl: "https://fixture.example.org",
+  contactEmail: "board@fixture.example.org",
+  calendarId: "fixture-calendar@group.calendar.google.com",
+  meetingRule: "Meetings are held on the last Tuesday of the month, unless otherwise noted.",
+  virtualLinkNote: "The virtual meeting link is sent by email. Write to us if you need it.",
+  joinFormUrl: "",
+  drive: {
+    bylaws: "fixturebylaws",
+    bylawsCurrentFileId: "fixturebylawscurrent",
+    meetings: "fixturemeetings",
+    presentations: "fixturepresentations",
+    letters: "fixtureletters",
+    neighborhoodPlan: "fixtureplan",
+    history: "fixturehistory",
+  },
+};
 
 export type Scenario = {
   /** Directory under dist/_preview/ and the route the page is rendered for. */

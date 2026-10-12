@@ -121,8 +121,7 @@ The three content files are plain text. To edit one:
 4. Click "Commit changes", choose to commit directly to the `main` branch, and confirm. If GitHub offers only a pull request, ask the person who manages the repository.
 5. A rebuild starts by itself. Follow it under the Actions tab (see section 3).
 
-> [!WARNING]
-> Known gap, to be fixed by a developer. The automated tests that run before every rebuild currently contain a copy of today's roster, the contact email, and the two county phone numbers. Until those tests are updated, a roster change, a new `term`, a non-blank `joinFormUrl`, a different `contactEmail`, or a change to the phone numbers in `resources.yaml` makes the Deploy run fail at the step "Run npm test". When that happens the live site keeps its old content and nothing is damaged, but the change does not go live until a developer updates the tests (`tests/render.test.ts`, `tests/settings.test.ts`, `tests/layout.test.ts`). Changes to `meetingRule`, `virtualLinkNote`, `bylawsCurrentFileId`, and resource labels or links are not affected.
+A valid edit to these files goes live with the next deploy (a change committed to `main` starts one). An invalid edit (a misspelled key, a bad value) fails the deploy, leaves the site as it was, and the error message names the file and the field.
 
 ### Change the board or block captains
 
@@ -158,7 +157,7 @@ Edit `src/content/settings.yaml`. The keys you might change:
 |---|---|
 | `meetingRule` | The standing sentence on the Meetings page (e.g. "Meetings are held on the last Tuesday of the month ..."). The home page shows it in place of a date when no upcoming meeting is found. |
 | `virtualLinkNote` | The note about how members get the virtual meeting link. Shown with the contact email on the Meetings page and in the home page's meeting notice when the meeting is virtual. |
-| `contactEmail` | The role address shown in the footer and on the home, Meetings, About, and Join pages. Note that the Join page text in `src/content/pages/join.md` also contains the address, and a build check expects the current one, so ask a developer before changing it. |
+| `contactEmail` | The role address shown in the footer and on the home, Meetings, About, and Join pages. The Join page text in `src/content/pages/join.md` also contains the address as typed text, so edit it there too. |
 | `joinFormUrl` | Link to a membership form. A blank value (`""`) means the Join page asks people to email the president. A non-blank value must start with `https://`. |
 | `drive.bylawsCurrentFileId` | The file ID of the current bylaws PDF (see above). |
 
@@ -219,7 +218,6 @@ Two exceptions: the very first deploy (when nothing is published yet) goes ahead
 | A file shows on the wrong meeting | The date in the name is wrong, or the name has several dates and a different one won, or a month-only name was matched to the only meeting that month. | Rename it with the exact date of the meeting it belongs to, in the form `YYYY-MM-DD`. |
 | The site did not update after a calendar change | The Apps Script trigger is not installed, was removed, or the GitHub token has expired. Or the rebuild ran but found nothing different. | Open the Actions tab and look for a "Deploy" run started just after your edit. If there is none, see `ops/apps-script/README.md` ("Test it" and "When the token expires"). If the run shows the deploy job skipped, the site was already current. |
 | The scheduled rebuild stopped | GitHub switched off the schedule after 60 days of no activity, and the Apps Script tick is not running either (trigger removed or token expired). | In the Actions tab, open "Deploy"; if GitHub shows it as disabled, click "Enable workflow". Then check the Apps Script triggers and the token (section 6). |
-| A change to the board, contact email, or phone numbers did not go live | The tests contain a copy of the old values (see the warning in section 2). | Open the failed Deploy run and the step "Run npm test"; ask a developer to update the tests. |
 | An issue titled "Broken external links" appeared | The weekly check found a link that no longer works. | Open the issue; it lists the links. Fix or replace them in `src/content/resources.yaml` (or the page text). The check does not close the issue by itself; when a later check is clean it adds a comment, and you can close it. |
 
 Links to `arlingtonva.us` (the county) and `researchgate.net` cannot be checked automatically, because those sites refuse automated visitors. They need an occasional manual look in a real browser; the "Broken external links" issue says so.
@@ -245,6 +243,7 @@ To pause the site's automatic updates, disabling the Deploy workflow in GitHub i
 | `npm run astro -- <args>` | The Astro command line, e.g. `npm run astro -- sync`. |
 | `npm run check` | `astro check`, the TypeScript and Astro type check. Expect 0 errors, 0 warnings, 0 hints. |
 | `npm test` | Unit tests (Vitest). They need no build and use fake responses in place of Google. `tests/build.test.ts` is not part of this run. |
+| `npm run test:content-edits` | Guards the board-member workflow: applies valid edits to the content files one at a time (and all together) and requires `npm test` and the build checks to pass, then applies invalid edits and requires a failure that names the file and field. Needs a clean working tree and restores the files itself; CI runs it. |
 | `npm run test:build` | Builds, then runs the assertions on `dist/` (`tests/build.test.ts`): no script tags, one `h1` per page, no video-meeting link, no stray email address, internal links resolve, and more. CI runs it with `OFFLINE=1`. |
 | `npm run test:dist` | The same assertions against an existing `dist/` without building. The Deploy workflow uses it after its real build. |
 | `npm run preview:fixtures` | Writes populated sample pages into `dist/_preview/` (needs an existing build). They are never deployed: `npm run build` wipes them, and the build assertions fail if they exist. |

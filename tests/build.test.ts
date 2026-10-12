@@ -19,9 +19,22 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 
 const DIST = resolve(process.cwd(), "dist");
-const ROLE_EMAIL = "president@arlingtonview.org";
+const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
+
+/**
+ * The addresses the owner has chosen to publish: `contactEmail` in settings.yaml, plus any address
+ * written into the Markdown page text. Read at test time, so editing either never fails this test;
+ * anything else in the output (and any gmail.com address at all) does.
+ */
+function publishedAddresses(): Set<string> {
+  const { contactEmail } = parse(readFileSync(resolve("src/content/settings.yaml"), "utf8")) as { contactEmail: string };
+  const pages = resolve("src/content/pages");
+  const prose = readdirSync(pages).map((f) => readFileSync(join(pages, f), "utf8")).join("\n");
+  return new Set([contactEmail, ...(prose.match(EMAIL) ?? [])].map((e) => e.toLowerCase()));
+}
 const EXPECTED_PAGES = [
   "index.html",
   "404.html",
@@ -108,11 +121,12 @@ describe("build output (dist/)", () => {
     expect(offenders((h) => h.match(pattern) ?? [])).toEqual([]);
   });
 
-  it("5. no gmail.com and no email address other than the role address", () => {
+  it("5. no gmail.com and no email address other than the configured contact address", () => {
+    const allowed = publishedAddresses();
     const bad = offenders((h) => {
       const hits = h.match(/gmail\.com/gi) ?? [];
-      const emails = h.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g) ?? [];
-      return [...hits, ...emails.filter((e) => e.toLowerCase() !== ROLE_EMAIL)];
+      const emails = h.match(EMAIL) ?? [];
+      return [...hits, ...emails.filter((e) => !allowed.has(e.toLowerCase()))];
     });
     expect(bad).toEqual([]);
   });

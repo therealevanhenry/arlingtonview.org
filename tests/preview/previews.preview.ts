@@ -26,15 +26,14 @@ const state = vi.hoisted(() => ({ meetings: [] as Meeting[], folders: {} as Reco
 
 vi.mock("../../src/lib/data", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/lib/data")>();
-  const { getSettings } = await import("../../src/lib/settings");
   const { buildArchive } = await import("../../src/lib/archive");
-  const { FIXTURE_NOW: now } = await import("./fixtures");
+  const { FIXTURE_NOW: now, FIXTURE_SETTINGS: settings } = await import("./fixtures");
   return {
     ...actual,
     // `satisfies` ties the mock to the real SiteData: a new field there fails `astro check` here.
     loadSiteData: async () =>
       ({
-        settings: await getSettings(),
+        settings,
         now,
         calendar: { ok: true, meetings: state.meetings },
         folders: state.folders,

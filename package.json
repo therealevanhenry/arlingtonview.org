@@ -12,6 +12,7 @@
     "astro": "astro",
     "check": "astro check",
     "test": "vitest run",
+    "test:content-edits": "scripts/check-content-edits.sh",
     "test:build": "npm run build && vitest run --config vitest.build.config.ts",
     "test:dist": "vitest run --config vitest.build.config.ts",
     "preview:fixtures": "vitest run --config tests/preview/vitest.config.ts",

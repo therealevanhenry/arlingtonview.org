@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import Footer from "../src/components/Footer.astro";
 import Header from "../src/components/Header.astro";
 import Base from "../src/layouts/Base.astro";
+import { getSettings } from "../src/lib/settings";
 
 const ORIGIN = "https://arlingtonview.org";
 const FULL_TRACE_VIEWBOX = "0 0 371.8 392.3";
@@ -209,6 +210,8 @@ describe("Base", () => {
       props: { home: true },
       slots: { default: "<h1>Arlington View Civic Association</h1>" },
     });
-    expect(html).toContain('href="mailto:president@arlingtonview.org"');
+    // Read at test time: the address is owner-edited content, so the test asserts the wiring, not the value.
+    const { contactEmail } = await getSettings();
+    expect(html).toContain(`href="mailto:${contactEmail}"`);
   });
 });
