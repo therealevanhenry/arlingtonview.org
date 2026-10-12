@@ -16,10 +16,11 @@ const recent = recentFiles([folders.meetings, folders.presentations], 3);
 ---
 
 <Base title="Home" lastUpdated={lastUpdated(data)}>
+  <h1 class="visually-hidden">Arlington View Civic Association</h1>
   <div class="sections">
-    <h1 class="visually-hidden">Arlington View Civic Association</h1>
     <NextMeeting meeting={meeting} settings={settings} agendaUrl={agendaUrl} />
     <section class="stack measure">
+      <h2 class="visually-hidden">About the association</h2>
       <p>
         The Arlington View Civic Association (AVCA) is the civic association for the Arlington View
         neighborhood in Arlington, Virginia. Membership is open to homeowners, renters, and nonprofit

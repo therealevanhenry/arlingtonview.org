@@ -95,6 +95,21 @@ describe("NextMeeting", () => {
     expect(html).not.toContain(settings.virtualLinkNote);
   });
 
+  it("links the contact email after the note in both states", async () => {
+    const mailto = `<a href="mailto:${settings.contactEmail}">${settings.contactEmail}</a>`;
+    const withMeeting = await container.renderToString(NextMeeting, { props: { meeting: sample, settings } });
+    const fallback = await container.renderToString(NextMeeting, { props: { meeting: undefined, settings } });
+    for (const html of [withMeeting, fallback]) {
+      expect(html).toContain(mailto);
+      expect(html.indexOf(settings.virtualLinkNote)).toBeLessThan(html.indexOf(mailto));
+    }
+  });
+
+  it("puts the button and subscribe links in one actions row", async () => {
+    const html = await container.renderToString(NextMeeting, { props: { meeting: sample, settings } });
+    expect(html).toMatch(/<(?:p|div) class="actions">[\s\S]*Add to Google Calendar[\s\S]*Subscribe to calendar[\s\S]*Calendar file \(ICS\)/);
+  });
+
   it("never prints the title", async () => {
     const html = await container.renderToString(NextMeeting, { props: { meeting: sample, settings } });
     expect(html).not.toContain("AVCA General Meeting</");
@@ -129,6 +144,8 @@ describe("MeetingList", () => {
     ];
     const html = await container.renderToString(MeetingList, { props: { meetings: [sample, second], rows } });
     expect(html).toContain("Tuesday, September 29, 2026, 7:00 to 8:30 pm");
+    expect(html).toContain('<time datetime="2026-09-29T23:00:00.000Z">Tuesday, September 29, 2026, 7:00 to 8:30 pm</time>');
+    expect(html).toContain('<time datetime="2026-10-27T23:00:00.000Z">');
     expect(html).toContain("Virtual meeting");
     expect(html).toContain("Library");
     expect(html).toContain("https://drive.google.com/file/d/x/view");
@@ -142,6 +159,7 @@ describe("QuickLinks", () => {
     expect(hrefs(html)).toEqual(["/documents/#bylaws", "/meetings/#past", "/documents/#presentations", "/resources/"]);
     expect(html).toContain("Minutes and agendas");
     expect(html).toContain("County services");
+    expect(html).toMatch(/<h2 class="visually-hidden">Quick links<\/h2>/);
   });
 });
 

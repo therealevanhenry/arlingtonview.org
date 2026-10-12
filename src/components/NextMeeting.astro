@@ -14,6 +14,7 @@ interface Props {
 const { meeting, settings, agendaUrl } = Astro.props;
 const calendarId = settings.calendarId.trim();
 const subscribe = calendarId === "" ? undefined : subscribeLinks(calendarId);
+const mailto = `mailto:${settings.contactEmail}`;
 const agenda = agendaUrl ?? meeting?.agendaUrl;
 ---
 
@@ -22,42 +23,48 @@ const agenda = agendaUrl ?? meeting?.agendaUrl;
   {
     meeting ? (
       <>
-        <p class="display">
-          <time datetime={meeting.start.toISOString()}>{formatMeetingDate(meeting.start)}</time>
-        </p>
-        <p>{formatMeetingTime(meeting.start, meeting.end)}</p>
-        <p>{meeting.isVirtual ? "Virtual meeting" : meeting.location}</p>
-        {meeting.isVirtual && <p>{settings.virtualLinkNote}</p>}
-        {agenda !== undefined && (
-          <p>
-            <a href={agenda}>Agenda</a>
+        <div class="notice-meta">
+          <p class="display">
+            <time datetime={meeting.start.toISOString()}>{formatMeetingDate(meeting.start)}</time>
           </p>
+          <p class="notice-time">{formatMeetingTime(meeting.start, meeting.end)}</p>
+          <p>{meeting.isVirtual ? "Virtual meeting" : meeting.location}</p>
+        </div>
+        {(meeting.isVirtual || agenda !== undefined) && (
+          <div class="notice-meta">
+            {meeting.isVirtual && (
+              <p>
+                {settings.virtualLinkNote} <a href={mailto}>{settings.contactEmail}</a>
+              </p>
+            )}
+            {agenda !== undefined && (
+              <p>
+                <a href={agenda}>Agenda</a>
+              </p>
+            )}
+          </div>
         )}
+      </>
+    ) : (
+      <div class="notice-meta">
+        <p>{settings.meetingRule}</p>
         <p>
+          {settings.virtualLinkNote} <a href={mailto}>{settings.contactEmail}</a>
+        </p>
+      </div>
+    )
+  }
+  {
+    (meeting !== undefined || subscribe !== undefined) && (
+      <div class="actions">
+        {meeting && (
           <a class="button" href={addToGoogleCalendarUrl(meeting)}>
             Add to Google Calendar
           </a>
-        </p>
-      </>
-    ) : (
-      <>
-        <p>{settings.meetingRule}</p>
-        <p>{settings.virtualLinkNote}</p>
-      </>
-    )
-  }
-  {
-    subscribe !== undefined && (
-      <p>
-        <a href={subscribe.google}>Subscribe to calendar</a>
-      </p>
-    )
-  }
-  {
-    subscribe !== undefined && (
-      <p>
-        <a href={subscribe.ics}>Calendar file (ICS)</a>
-      </p>
+        )}
+        {subscribe !== undefined && <a href={subscribe.google}>Subscribe to calendar</a>}
+        {subscribe !== undefined && <a href={subscribe.ics}>Calendar file (ICS)</a>}
+      </div>
     )
   }
 </section>

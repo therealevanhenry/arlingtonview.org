@@ -19,7 +19,9 @@ const { meetings, rows } = Astro.props;
         const agenda = agendaFor(m, rows);
         return (
           <li class="stack">
-            <p>{formatMeetingRange(m.start, m.end)}</p>
+            <p>
+              <time datetime={m.start.toISOString()}>{formatMeetingRange(m.start, m.end)}</time>
+            </p>
             <p>{m.isVirtual ? "Virtual meeting" : m.location}</p>
             {agenda !== undefined && (
               <p>

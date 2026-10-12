@@ -128,10 +128,12 @@ by source order and nothing needs `!important`.
 | `.visually-hidden` | available to screen readers, not drawn |
 | `.display` | the next-meeting date |
 | `.button` | the one primary action in a block: solid indigo, paper text, Source Sans 600, 2px radius, 44px minimum height. Secondary actions are plain links, never ghost buttons |
+| `.actions` | wrapping flex row of one `.button` followed by plain links, vertically centered on the button; each plain link has a 44px minimum tap height. Reusable on any page |
+| `.notice-meta` / `.notice-time` | a tight group of lines inside a `.notice` (`--space-1` between lines; the notice's `.stack` separates groups). `.notice-time` is the time line at `--step-1` |
 | `.notice` | tint ground, padded (`--space-5`, `--space-6` from 40rem). With `.cornice` it is the next-meeting block |
 | `.callout` | same ground and padding, no cornice, no accent bar |
 | `.cornice` | see above; next-meeting block only |
-| `.entries` / `.entry` / `.entry-title` | ruled entry list: auto-fit grid (min 14rem), each entry a 1px top rule, a Garamond heading link, one line of body text |
+| `.entries` / `.entry` / `.entry-title` | ruled entry list: auto-fit grid (min `min(15rem, 100%)`, so a 72rem container gives 1 column on phones, 2 x 2 at mid widths, 4 across at full width, never 3 + 1), each entry a 1px top rule, a Garamond heading link, one line of body text |
 | `.table` | left-aligned table with 1px row rules and tabular figures. Under 40rem each row restacks as a block and each cell is labelled from `td[data-label]`, so every `td` needs a `data-label` |
 | `.files` / `.file` / `.file-date` | plain list: a link plus a secondary date |
 | `.site-header`, `.brand`, `.site-nav` and friends | `src/components/Header.astro` |

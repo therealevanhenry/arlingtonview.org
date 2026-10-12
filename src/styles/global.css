@@ -299,12 +299,37 @@ a:hover {
   text-decoration-line: underline;
 }
 
+/* ---------- Actions row ---------- */
+
+/* A wrapping row of one button and plain links, centered on the button. Links get a 44px tap height. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+}
+
+.actions > a:not(.button) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
 /* ---------- Notice, callout, cornice ---------- */
 
 .notice,
 .callout {
   padding: var(--space-5);
   background-color: var(--tint);
+}
+
+/* A tight group of lines inside a notice; the notice's own stack separates groups. */
+.notice-meta > * + * {
+  margin-block-start: var(--space-1);
+}
+
+.notice-time {
+  font-size: var(--step-1);
 }
 
 /*
@@ -322,7 +347,7 @@ a:hover {
 
 .entries {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
   gap: var(--space-5) var(--space-6);
   padding: 0;
   list-style: none;
