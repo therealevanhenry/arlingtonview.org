@@ -62,7 +62,7 @@ describe("createSiteDataLoader", () => {
   });
 
   describe("calendar failure warning", () => {
-    const run = async (calendar: { ok: false; reason: string }, calendarId: string, offline?: string) => {
+    const run = async (calendar: Awaited<ReturnType<typeof import("../src/lib/calendar").loadCalendar>>, calendarId: string, offline?: string) => {
       const settings = { ...(await getSettings()), calendarId };
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const previous = process.env.OFFLINE;
@@ -87,6 +87,10 @@ describe("createSiteDataLoader", () => {
     it("warns once with a [calendar] prefix and the safe reason when a configured calendar fails", async () => {
       const lines = await run({ ok: false, reason: "HTTP 503" }, "cal@group.calendar.google.com");
       expect(lines).toEqual(["[calendar] not loaded: HTTP 503; the meetings list will be empty"]);
+    });
+
+    it("stays quiet when the calendar loaded", async () => {
+      expect(await run({ ok: true, meetings: [] }, "cal@group.calendar.google.com")).toEqual([]);
     });
 
     it("stays quiet when OFFLINE=1", async () => {

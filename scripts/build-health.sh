@@ -7,7 +7,7 @@
 # Counts as degraded:
 #   [drive] folder "<id>" not listed: <reason>   for any reason except the three below
 #       (HTTP <status>, timeout, network error, invalid response, too many pages, unexpected error)
-#   [calendar] ...                               the calendar fetch failed (see src/lib/data.ts)
+#   [calendar] not loaded: ...                   the calendar fetch failed (see src/lib/data.ts)
 # Does not count: "no API key" (secret not configured yet; the site deploys with folder links),
 # "no folder ID", and "offline" (OFFLINE=1).
 set -euo pipefail
@@ -24,9 +24,9 @@ fi
 
 drive='\[drive\] folder ".*" not listed: '
 benign="${drive}(no API key|no folder ID|offline);"
-calendar='\[calendar\] '
+calendar='\[calendar\] not loaded: '
 
-bad=$({ grep -E "${drive}|${calendar}" "$log" || true; } | { grep -vE "$benign" || true; })
+bad=$({ grep -aE "${drive}|${calendar}" "$log" || true; } | { grep -avE "$benign" || true; })
 if [ -n "$bad" ]; then
   printf '%s\n' "$bad"
   exit 1

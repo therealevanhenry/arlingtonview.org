@@ -36,20 +36,11 @@ jobs:
           output: lychee/out.md
           fail: false
 
-      # lychee writes its report only when it ran to the end. No report means it crashed or was
-      # misconfigured, which must not be reported as "broken links".
+      # lychee exit codes: 0 clean, 2 link failures, anything else a crash or configuration error.
+      # lychee-action always creates the report file, so the exit code is the only reliable signal.
       - name: Classify the result
         id: classify
-        run: |
-          set -eu
-          if [ "$LYCHEE_EXIT_CODE" = "0" ]; then
-            outcome=clean
-          elif [ -s lychee/out.md ]; then
-            outcome=broken
-          else
-            outcome=crashed
-          fi
-          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+        run: echo "outcome=$(scripts/lychee-outcome.sh "$LYCHEE_EXIT_CODE")" >> "$GITHUB_OUTPUT"
         env:
           LYCHEE_EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
 
@@ -83,7 +74,7 @@ jobs:
         if: steps.classify.outputs.outcome != 'clean'
         run: |
           if [ "$OUTCOME" = "crashed" ]; then
-            echo "::error::lychee did not produce a report (exit code $LYCHEE_EXIT_CODE): crash or configuration error. No issue was created or edited."
+            echo "::error::lychee crashed or was misconfigured (exit code $LYCHEE_EXIT_CODE), so the links were not checked. No issue was created or edited."
           else
             echo "::error::lychee reported broken links (exit code $LYCHEE_EXIT_CODE); see the issue."
           fi

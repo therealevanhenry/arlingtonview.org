@@ -22,9 +22,12 @@ on:
 permissions:
   contents: read
 
+# Not cancelling: three triggers can coincide (cron, Apps Script tick, calendar edit). A newer run waits
+# (GitHub keeps only the latest pending run) and re-decides from live state. The ref keeps a dispatch
+# from another branch, which the job `if` skips, from blocking a real deploy.
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
 
 defaults:
   run:
@@ -36,6 +39,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # pages: read is what configure-pages needs (GET /pages; "Pages" repository permission: read).
+    permissions:
+      contents: read
+      pages: read
     outputs:
       deploy: ${{ steps.decide.outputs.deploy }}
     steps:
@@ -50,17 +57,6 @@ jobs:
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v6
-
-      # What is live right now (the github.io preview before DNS cutover, the apex after).
-      # Any failure just means "different"; scripts/deploy-decision.sh validates the body.
-      - name: Fetch the deployed build hash
-        id: deployed
-        run: |
-          # Best-effort cache busting: Pages may serve a stale copy for a few minutes after a deploy.
-          status=$(curl -sS --globoff --max-time 20 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-hash.txt" -w '%{http_code}' "$BASE_URL/build-hash.txt?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" || true)
-          echo "status=${status:-000}" >> "$GITHUB_OUTPUT"
-        env:
-          BASE_URL: ${{ steps.pages.outputs.base_url }}
 
       # The only step that sees the Drive key. The loaders log fixed reason strings, never URLs or the key.
       - name: Build
@@ -91,7 +87,20 @@ jobs:
 
       - name: Hash the build
         id: hash
-        run: echo "value=$(scripts/dist-hash.sh)" >> "$GITHUB_OUTPUT"
+        run: |
+          digest=$(scripts/dist-hash.sh)
+          echo "value=$digest" >> "$GITHUB_OUTPUT"
+
+      # What is live right now (the github.io preview before DNS cutover, the apex after).
+      # Any failure just means "different"; scripts/deploy-decision.sh validates the body.
+      - name: Fetch the deployed build hash
+        id: deployed
+        run: |
+          # Best-effort cache busting: Pages may serve a stale copy for a few minutes after a deploy.
+          status=$(curl -sS --globoff --max-time 20 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-hash.txt" -w '%{http_code}' "$BASE_URL/build-hash.txt?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" || true)
+          echo "status=${status:-000}" >> "$GITHUB_OUTPUT"
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
 
       - name: Decide whether to deploy
         id: decide

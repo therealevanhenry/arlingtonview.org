@@ -38,8 +38,12 @@ if [ ! -d "$root/dist" ]; then
   exit 2
 fi
 
-# Origin of siteUrl (scheme://host[:port]); empty when unset, which skips nothing.
-site_origin=$(sed -n -E 's/^siteUrl:[[:space:]]*"?(https?:\/\/[^\/"[:space:]]+).*/\1/p' "$root/src/content/settings.yaml" | head -n 1)
+# Origin of siteUrl (scheme://host[:port]), unquoted or in single or double quotes.
+site_origin=$(sed -n -E "s/^siteUrl:[[:space:]]*[\"']?(https?:\/\/[^\/\"'[:space:]]+).*/\1/p" "$root/src/content/settings.yaml" | head -n 1)
+if [ -z "$site_origin" ]; then
+  echo "verify-links: could not read siteUrl (an http or https URL) from src/content/settings.yaml" >&2
+  exit 2
+fi
 
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
@@ -65,15 +69,13 @@ while IFS= read -r url; do
       continue
       ;;
   esac
-  if [ -n "$site_origin" ]; then
-    case "$url" in
-      "$site_origin" | "$site_origin"/* | "$site_origin"\?* | "$site_origin"\#*)
-        printf 'SKIP  %s (own origin)\n' "$url"
-        own=$((own + 1))
-        continue
-        ;;
-    esac
-  fi
+  case "$url" in
+    "$site_origin" | "$site_origin"/* | "$site_origin"\?* | "$site_origin"\#*)
+      printf 'SKIP  %s (own origin)\n' "$url"
+      own=$((own + 1))
+      continue
+      ;;
+  esac
   total=$((total + 1))
   code=$(curl -sS --globoff -o /dev/null -L --max-time 20 -A "$ua" -w '%{http_code}' "$url" 2>/dev/null) || code=000
   case "$code" in

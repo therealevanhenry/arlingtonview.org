@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -41,12 +41,24 @@ describe("dist-hash.sh", () => {
     expect(r.out).toMatch(/^[0-9a-f]{64}\n$/);
   });
 
-  it("is the same for an identical copy in another location and under another locale", () => {
+  it("is the same for an identical copy in another location", () => {
     const a = join(tmp, "one/deeper/dist");
     const b = join(tmp, "two/dist");
     site(a);
     site(b);
-    expect(hash(b, { LC_ALL: "tr_TR.UTF-8" }).out).toBe(hash(a).out);
+    expect(hash(b).out).toBe(hash(a).out);
+  });
+
+  // B.txt sorts before a.txt in the C locale and after it in en_US.UTF-8, so a digest computed under
+  // en_US.UTF-8 would differ unless the script forces LC_ALL=C. Removing that line makes this fail.
+  const hasEnUS = spawnSync("locale", ["-a"], { encoding: "utf8" }).stdout.split("\n").some((l) => /^en_US\.utf-?8$/i.test(l));
+  it.skipIf(!hasEnUS)("is independent of the caller's locale (forces LC_ALL=C)", () => {
+    site(tmp);
+    writeFileSync(join(tmp, "B.txt"), "upper");
+    writeFileSync(join(tmp, "a.txt"), "lower");
+    const inC = hash(tmp, { LC_ALL: "C" }).out;
+    expect(hash(tmp, { LC_ALL: "en_US.UTF-8" }).out).toBe(inC);
+    expect(hash(tmp).out).toBe(inC);
   });
 
   it("ignores mtimes", () => {
@@ -63,7 +75,10 @@ describe("dist-hash.sh", () => {
     const changed = hash(tmp).out;
     expect(changed).not.toBe(before);
     writeFileSync(join(tmp, "extra.txt"), "x");
-    expect(hash(tmp).out).not.toBe(changed);
+    const added = hash(tmp).out;
+    expect(added).not.toBe(changed);
+    renameSync(join(tmp, "extra.txt"), join(tmp, "renamed.txt"));
+    expect(hash(tmp).out).not.toBe(added);
   });
 
   it("ignores a top-level build-hash.txt but not one nested deeper", () => {
@@ -130,6 +145,17 @@ describe("build-health.sh", () => {
     expect(r.out).toBe(drive("HTTP 403"));
   });
 
+  it("does not fail open on a log containing a NUL byte", () => {
+    const r = health(`before\0\n${drive("HTTP 403")}`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("HTTP 403");
+  });
+
+  it("only matches the calendar line that data.ts emits", () => {
+    expect(health("[calendar] something else entirely\n").code).toBe(0);
+    expect(health("[calendar] not loaded: timeout; the meetings list will be empty\n").code).toBe(1);
+  });
+
   it("exits 2 on missing file or wrong usage", () => {
     expect(run("build-health.sh", [join(tmp, "missing.log")]).code).toBe(2);
     expect(run("build-health.sh").code).toBe(2);
@@ -140,10 +166,12 @@ describe("deploy-decision.sh", () => {
   const NEW = "a".repeat(64);
   const OTHER = "b".repeat(64);
   const decide = (status: string, body: string | undefined, extra: Record<string, string> = {}) => {
+    rmSync(join(tmp, "out.txt"), { force: true });
     const file = join(tmp, "deployed.txt");
     if (body !== undefined) writeFileSync(file, body);
     return run("deploy-decision.sh", [], {
       NEW_HASH: NEW,
+      DEGRADED: "false",
       DEPLOYED_STATUS: status,
       DEPLOYED_FILE: file,
       GITHUB_OUTPUT: join(tmp, "out.txt"),
@@ -151,8 +179,7 @@ describe("deploy-decision.sh", () => {
     });
   };
   const outputs = (): string => {
-    const r = spawnSync("cat", [join(tmp, "out.txt")], { encoding: "utf8" });
-    return r.stdout;
+    return spawnSync("cat", [join(tmp, "out.txt")], { encoding: "utf8" }).stdout;
   };
 
   it("deploys when nothing is deployed yet (404)", () => {
@@ -186,11 +213,27 @@ describe("deploy-decision.sh", () => {
     expect(outputs()).toContain("deploy=true");
   });
 
-  it("unchanged wins over degraded, with a warning", () => {
+  it("fails a degraded build even when it is identical to the live site", () => {
     const r = decide("200", `${NEW}\n`, { DEGRADED: "true" });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("::error::");
+    expect(outputs()).toBe("deploy=false\nreason=degraded-blocked\n");
+  });
+
+  it("skips a degraded identical build with a warning when allow_degraded is true", () => {
+    const r = decide("200", `${NEW}\n`, { DEGRADED: "true", ALLOW_DEGRADED: "true" });
     expect(r.code).toBe(0);
     expect(r.out).toContain("::warning::");
-    expect(outputs()).toContain("deploy=false");
+    expect(outputs()).toBe("deploy=false\nreason=unchanged-degraded-allowed\n");
+  });
+
+  it("requires DEGRADED to be exactly true or false, and writes no output otherwise", () => {
+    for (const bad of ["", "TRUE", "1", "yes"]) {
+      const r = decide("200", `${OTHER}\n`, { DEGRADED: bad });
+      expect(r.code).toBe(2);
+      expect(r.err).toContain("DEGRADED must be exactly");
+    }
+    expect(outputs()).toBe("");
   });
 
   it("fails and does not deploy a degraded build over a live site", () => {
@@ -225,7 +268,7 @@ describe("deploy-decision.sh", () => {
 
 describe("check-reproducible.sh", () => {
   // A fake checkout: the real script, a stub dist-hash.sh, and a stub npx on PATH. Never builds anything.
-  const check = (digests: [string, string]) => {
+  const check = (digests: [string, string], npx = "exit 0") => {
     mkdirSync(join(tmp, "scripts"));
     mkdirSync(join(tmp, "bin"));
     copyFileSync(join(scripts, "check-reproducible.sh"), join(tmp, "scripts/check-reproducible.sh"));
@@ -234,7 +277,7 @@ describe("check-reproducible.sh", () => {
       join(tmp, "scripts/dist-hash.sh"),
       `#!/usr/bin/env bash\nn=$(( $(cat "${tmp}/calls") + 1 )); echo $n > "${tmp}/calls"\nif [ $n = 1 ]; then echo ${digests[0]}; else echo ${digests[1]}; fi\n`,
     );
-    writeFileSync(join(tmp, "bin/npx"), "#!/usr/bin/env bash\nexit 0\n");
+    writeFileSync(join(tmp, "bin/npx"), `#!/usr/bin/env bash\n${npx}\n`);
     for (const f of ["scripts/dist-hash.sh", "bin/npx"]) chmodSync(join(tmp, f), 0o755);
     const r = spawnSync("bash", [join(tmp, "scripts/check-reproducible.sh")], {
       encoding: "utf8",
@@ -249,9 +292,49 @@ describe("check-reproducible.sh", () => {
     expect(r.out).toContain("reproducible: aaa");
   });
 
+  it("fails when a build fails, showing the build log", () => {
+    const r = check(["aaa", "aaa"], "echo boom >&2; exit 3");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("build 1 failed");
+    expect(r.err).toContain("boom");
+  });
+
   it("fails and names both digests when they differ", () => {
     const r = check(["aaa", "bbb"]);
     expect(r.code).toBe(1);
     expect(r.err).toContain("aaa vs bbb");
+  });
+});
+
+describe("lychee-outcome.sh", () => {
+  it.each([
+    ["0", "clean"],
+    ["2", "broken"],
+    ["1", "crashed"],
+    ["3", "crashed"],
+    ["", "crashed"],
+    ["137", "crashed"],
+  ])("exit code %j is %s", (code, outcome) => {
+    const r = run("lychee-outcome.sh", [code]);
+    expect(r.code).toBe(0);
+    expect(r.out).toBe(`${outcome}\n`);
+  });
+
+  it("exits 2 without an argument", () => {
+    expect(run("lychee-outcome.sh").code).toBe(2);
+  });
+});
+
+describe("verify-links.sh preconditions", () => {
+  it("exits 2 with a clear message when siteUrl cannot be read", () => {
+    mkdirSync(join(tmp, "scripts"));
+    mkdirSync(join(tmp, "dist"));
+    mkdirSync(join(tmp, "src/content"), { recursive: true });
+    copyFileSync(join(scripts, "verify-links.sh"), join(tmp, "scripts/verify-links.sh"));
+    writeFileSync(join(tmp, "src/content/resources.yaml"), "");
+    writeFileSync(join(tmp, "src/content/settings.yaml"), "siteName: x\n");
+    const r = spawnSync("sh", [join(tmp, "scripts/verify-links.sh")], { encoding: "utf8", env: { PATH: process.env.PATH ?? "" } });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("could not read siteUrl");
   });
 });
