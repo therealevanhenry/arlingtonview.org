@@ -1,8 +1,9 @@
 # Builds the site and deploys it to GitHub Pages. Triggers: push to main, daily 10:00 UTC cron, manual
 # dispatch, and repository_dispatch "calendar-updated" / "daily-rebuild" (Apps Script, ops/apps-script;
 # a second clock in case GitHub disables the cron). Skips the deploy when the build matches the live
-# site (build-hash.txt). A build where Google was unreachable fails instead of replacing a healthy site
-# (unless allow_degraded is ticked on a manual run, or nothing is deployed yet).
+# site (build-hash.txt). A degraded build (Google unreachable or misconfigured, an empty Drive folder,
+# or a folder that lost more than half its files) fails instead of replacing a healthy site; the only
+# way past that is a manual run with allow_degraded ticked. See README section 3.
 name: Deploy
 
 on:
@@ -34,9 +35,25 @@ defaults:
     shell: bash
 
 jobs:
-  build:
+  # A run for a commit that is no longer the tip of main (a manual re-run of an old run, or a run
+  # overtaken by a newer push) builds and deploys nothing: the two jobs below are skipped and the run is
+  # green with a notice. The run for the newer commit does the work.
+  tip:
     # Manual runs can pick any branch; only main may deploy.
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      current: ${{ steps.check.outputs.current }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check that this commit is still the tip of main
+        id: check
+        run: scripts/tip-check.sh
+
+  build:
+    needs: tip
+    if: needs.tip.outputs.current == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # pages: read is what configure-pages needs (GET /pages; "Pages" repository permission: read).
@@ -74,15 +91,31 @@ jobs:
       - name: Assert on the built site
         run: npm run test:dist
 
+      # src/lib/data.ts prints one "[site-data] health:" line per build; nothing else in the log decides.
+      # Exit 2 (no line, two lines, or an unknown one) fails the run: silence is not health.
       - name: Check build health
         id: health
         run: |
           rc=0
-          scripts/build-health.sh "$RUNNER_TEMP/build.log" || rc=$?
+          report=$(scripts/build-health.sh "$RUNNER_TEMP/build.log") || rc=$?
           case "$rc" in
-            0) echo "degraded=false" >> "$GITHUB_OUTPUT" ;;
-            1) echo "degraded=true" >> "$GITHUB_OUTPUT" ;;
-            *) exit "$rc" ;;
+            0)
+              echo "Build health: $report"
+              case "$report" in
+                unconfigured:*)
+                  echo "::warning::The site was built without part of its configuration (${report#unconfigured: }). The sections that depend on it show a fallback, e.g. a link to the Drive folder in place of a file list. See README section 6."
+                  ;;
+              esac
+              echo "degraded=false" >> "$GITHUB_OUTPUT"
+              ;;
+            1)
+              echo "::warning::Degraded build (${report#degraded: })."
+              echo "degraded=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::The build log does not hold exactly one well-formed \"[site-data] health:\" line, so this build cannot be called healthy. Failing the run."
+              exit "$rc"
+              ;;
           esac
 
       - name: Hash the build
@@ -92,15 +125,38 @@ jobs:
           echo "value=$digest" >> "$GITHUB_OUTPUT"
 
       # What is live right now (the github.io preview before DNS cutover, the apex after).
-      # Any failure just means "different"; scripts/deploy-decision.sh validates the body.
-      - name: Fetch the deployed build hash
+      # Any failure just means "different" (the hash) or "no baseline" (the file counts); the two scripts
+      # that read these files validate them.
+      - name: Fetch the deployed build hash and file counts
         id: deployed
         run: |
           # Best-effort cache busting: Pages may serve a stale copy for a few minutes after a deploy.
-          status=$(curl -sS --globoff --max-time 20 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-hash.txt" -w '%{http_code}' "$BASE_URL/build-hash.txt?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" || true)
+          bust="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          status=$(curl -sS --globoff --max-time 20 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-hash.txt" -w '%{http_code}' "$BASE_URL/build-hash.txt?$bust" || true)
           echo "status=${status:-000}" >> "$GITHUB_OUTPUT"
+          # --fail: an error page is not saved in place of the file.
+          rm -f "$RUNNER_TEMP/deployed-meta.json"
+          curl -sS --fail --globoff --max-time 20 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-meta.json" "$BASE_URL/build-meta.json?$bust" \
+            || rm -f "$RUNNER_TEMP/deployed-meta.json"
         env:
           BASE_URL: ${{ steps.pages.outputs.base_url }}
+
+      # Drive answers HTTP 200 with fewer files when sharing is removed from a subfolder, so a listing
+      # that "worked" can still be wrong. A root that lost more than half its files counts as degraded.
+      - name: Compare Drive file counts with the live site
+        id: drop
+        run: |
+          rc=0
+          report=$(scripts/drive-drop.sh "$RUNNER_TEMP/deployed-meta.json" dist/build-meta.json) || rc=$?
+          printf '%s\n' "$report"
+          case "$rc" in
+            0) echo "dropped=false" >> "$GITHUB_OUTPUT" ;;
+            1)
+              while IFS= read -r line; do echo "::warning::${line}"; done <<< "$report"
+              echo "dropped=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *) exit "$rc" ;;
+          esac
 
       - name: Decide whether to deploy
         id: decide
@@ -110,6 +166,7 @@ jobs:
           DEPLOYED_STATUS: ${{ steps.deployed.outputs.status }}
           DEPLOYED_FILE: ${{ runner.temp }}/deployed-hash.txt
           DEGRADED: ${{ steps.health.outputs.degraded }}
+          DRIVE_DROP: ${{ steps.drop.outputs.dropped }}
           ALLOW_DEGRADED: ${{ inputs.allow_degraded == true }}
 
       - name: Record the build hash

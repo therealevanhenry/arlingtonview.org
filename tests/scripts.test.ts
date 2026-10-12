@@ -102,63 +102,174 @@ describe("dist-hash.sh", () => {
 });
 
 describe("build-health.sh", () => {
+  // The script reads the one line src/lib/data.ts prints. tests/data.test.ts feeds it the REAL loader
+  // output; these cover the parsing and the fail-closed cases.
   const health = (log: string) => {
     const file = join(tmp, "build.log");
     writeFileSync(file, log);
     return run("build-health.sh", [file]);
   };
+  const line = (status: string) => `[site-data] health: ${status}\n`;
   const drive = (reason: string) => `[drive] folder "abc123" not listed: ${reason}; falling back to a link\n`;
 
-  it("is healthy for a clean log", () => {
-    expect(health("12:00 [build] 31 page(s) built\n").code).toBe(0);
+  it("exits 0 and prints ok for a healthy build", () => {
+    const r = health(`12:00 [build] start\n${line("ok")}12:00 [build] 9 page(s) built\n`);
+    expect(r.code).toBe(0);
+    expect(r.out).toBe("ok\n");
   });
 
-  it.each(["no API key", "no folder ID", "offline"])("ignores a [drive] line with reason %s", (reason) => {
-    expect(health(drive(reason)).code).toBe(0);
+  it("exits 0 for an OFFLINE=1 build", () => {
+    const r = health(line("ok (offline)"));
+    expect(r.code).toBe(0);
+    expect(r.out).toBe("ok (offline)\n");
   });
 
-  it.each(["HTTP 403", "HTTP 500", "timeout", "network error", "invalid response", "too many pages", "unexpected error"])(
-    "is degraded for a [drive] line with reason %s, and prints it",
-    (reason) => {
-      const r = health(`before\n${drive(reason)}after\n`);
-      expect(r.code).toBe(1);
-      expect(r.out).toBe(drive(reason));
-    },
-  );
-
-  it("matches a warning that Astro's progress output left in the middle of a line", () => {
-    const line = `18:03:47   ├─ /about/history/index.html${drive("HTTP 403")}`;
-    expect(health(line).code).toBe(1);
-    expect(health(`18:03:47   ├─ /about/history/index.html${drive("no API key")}`).code).toBe(0);
+  it("exits 0 for an unconfigured build and prints what is missing, for the workflow's warning", () => {
+    const r = health(drive("no API key") + line("unconfigured (no API key; calendarId is blank)"));
+    expect(r.code).toBe(0);
+    expect(r.out).toBe("unconfigured: no API key; calendarId is blank\n");
   });
 
-  it("is degraded for a [calendar] line", () => {
-    const line = "[calendar] not loaded: HTTP 503; the meetings list will be empty\n";
-    const r = health(line);
+  it("exits 1 for a degraded build and prints the reasons", () => {
+    const r = health(`before\n${drive("HTTP 403")}${line("degraded (drive meetings: HTTP 403; calendar: HTTP 503)")}after\n`);
     expect(r.code).toBe(1);
-    expect(r.out).toBe(line);
+    expect(r.out).toBe("degraded: drive meetings: HTTP 403; calendar: HTTP 503\n");
   });
 
-  it("prints only the offending lines when benign and bad lines are mixed", () => {
-    const r = health(drive("no API key") + drive("HTTP 403") + drive("offline"));
+  it("finds the line when Astro's progress output left it in the middle of another", () => {
+    const r = health(`18:03:47   ├─ /about/history/index.html${line("degraded (drive bylaws: timeout)")}`);
     expect(r.code).toBe(1);
-    expect(r.out).toBe(drive("HTTP 403"));
+    expect(r.out).toBe("degraded: drive bylaws: timeout\n");
+    expect(health(`18:03:47   ├─ /about/history/index.html${line("ok")}`).code).toBe(0);
   });
 
   it("does not fail open on a log containing a NUL byte", () => {
-    const r = health(`before\0\n${drive("HTTP 403")}`);
+    const r = health(`before\0\n${line("degraded (drive bylaws: HTTP 403)")}`);
     expect(r.code).toBe(1);
     expect(r.out).toContain("HTTP 403");
   });
 
-  it("only matches the calendar line that data.ts emits", () => {
-    expect(health("[calendar] something else entirely\n").code).toBe(0);
-    expect(health("[calendar] not loaded: timeout; the meetings list will be empty\n").code).toBe(1);
+  it("exits 2 when the health line is absent: the per-root warnings alone decide nothing", () => {
+    for (const log of ["12:00 [build] 9 page(s) built\n", drive("HTTP 403"), "[calendar] not loaded: HTTP 503; the meetings list will be empty\n", ""]) {
+      const r = health(log);
+      expect(r.code, JSON.stringify(log)).toBe(2);
+      expect(r.err).toContain("found 0");
+      expect(r.out).toBe("");
+    }
+  });
+
+  it("exits 2 when the health line appears more than once, even if every copy says ok", () => {
+    for (const log of [line("ok") + line("ok"), line("ok") + line("degraded (calendar: HTTP 503)"), `x ${line("ok").trimEnd()} ${line("ok")}`]) {
+      const r = health(log);
+      expect(r.code, JSON.stringify(log)).toBe(2);
+      expect(r.err).toContain("found 2");
+    }
+  });
+
+  it("exits 2 for a health line that is not one of the four forms", () => {
+    for (const status of ["", "OK", "ok and then some", "fine", "degraded", "degraded ()", "unconfigured (a (b))", "degraded (x) trailing"]) {
+      const r = health(line(status));
+      expect(r.code, status).toBe(2);
+      expect(r.out, status).toBe("");
+    }
   });
 
   it("exits 2 on missing file or wrong usage", () => {
     expect(run("build-health.sh", [join(tmp, "missing.log")]).code).toBe(2);
     expect(run("build-health.sh").code).toBe(2);
+  });
+});
+
+describe("drive-drop.sh", () => {
+  const meta = (counts: Record<string, unknown>) => JSON.stringify({ driveFileCounts: counts });
+  /** `undefined` means the file does not exist. */
+  const drop = (live: string | undefined, fresh: string | undefined) => {
+    const a = join(tmp, "live.json");
+    const b = join(tmp, "new.json");
+    rmSync(a, { force: true });
+    rmSync(b, { force: true });
+    if (live !== undefined) writeFileSync(a, live);
+    if (fresh !== undefined) writeFileSync(b, fresh);
+    return run("drive-drop.sh", [a, b]);
+  };
+  const FIVE = { bylaws: 6, meetings: 40, presentations: 9, letters: 5, neighborhoodPlan: 4 };
+
+  it.each<[string, Record<string, unknown>, Record<string, unknown>]>([
+    ["identical counts", FIVE, FIVE],
+    ["every root grew", FIVE, { bylaws: 7, meetings: 44, presentations: 10, letters: 6, neighborhoodPlan: 5 }],
+    ["exactly half (40 to 20, 4 to 2)", FIVE, { ...FIVE, meetings: 20, neighborhoodPlan: 2 }],
+    ["an odd count at the boundary (9 to 5, 5 to 3)", FIVE, { ...FIVE, presentations: 5, letters: 3 }],
+    ["a root at 3 files that drops to 1", { ...FIVE, letters: 3 }, { ...FIVE, letters: 1 }],
+    ["a root at 3 files that is no longer listed", { ...FIVE, letters: 3 }, { bylaws: 6, meetings: 40, presentations: 9, neighborhoodPlan: 4 }],
+    ["a new root appearing", { bylaws: 6 }, { bylaws: 6, meetings: 40 }],
+    ["a live site that listed nothing (built without the key)", {}, FIVE],
+    ["neither build listed anything", {}, {}],
+  ])("exits 0: %s", (_name, live, fresh) => {
+    const r = drop(meta(live), meta(fresh));
+    expect(r.code).toBe(0);
+    expect(r.err).toBe("");
+  });
+
+  it.each<[string, Record<string, unknown>, string]>([
+    ["fewer than half (40 to 19)", { ...FIVE, meetings: 19 }, 'drive-drop: "meetings" listed 40 files on the live site and 19 in this build\n'],
+    ["a root at 4 files that drops to 1", { ...FIVE, neighborhoodPlan: 1 }, 'drive-drop: "neighborhoodPlan" listed 4 files on the live site and 1 in this build\n'],
+    ["5 to 2", { ...FIVE, letters: 2 }, 'drive-drop: "letters" listed 5 files on the live site and 2 in this build\n'],
+    [
+      "a root that is no longer listed (failed, emptied, or the key is gone)",
+      { bylaws: 6, presentations: 9, letters: 5, neighborhoodPlan: 4 },
+      'drive-drop: "meetings" listed 40 files on the live site and is not listed in this build\n',
+    ],
+  ])("exits 1 and names the root and both counts: %s", (_name, fresh, expected) => {
+    const r = drop(meta(FIVE), meta(fresh));
+    expect(r.code).toBe(1);
+    expect(r.out).toBe(expected);
+  });
+
+  it("names every root that dropped, one per line", () => {
+    const r = drop(meta(FIVE), meta({}));
+    expect(r.code).toBe(1);
+    expect(r.out.trimEnd().split("\n")).toHaveLength(5);
+    expect(r.out).toContain('"bylaws" listed 6 files on the live site and is not listed in this build');
+  });
+
+  it.each<[string, string | undefined]>([
+    ["the live file is absent (nothing deployed, or the fetch failed)", undefined],
+    ["the live file is empty", ""],
+    ["the live file is an error page", "<!doctype html><title>Page not found</title>"],
+    ["the live file is malformed JSON", '{"driveFileCounts":{"meetings":40'],
+    ["the live file has no driveFileCounts", "{}"],
+    ["driveFileCounts is not an object", '{"driveFileCounts":[40]}'],
+    ["a count is not a non-negative whole number", meta({ meetings: "40" })],
+    ["a count is negative", meta({ meetings: -1 })],
+    ["a count is fractional", meta({ meetings: 40.5 })],
+    ["the live file is JSON null", "null"],
+    ["a root name is not a plain key (it would be printed into the workflow log)", JSON.stringify({ driveFileCounts: { "x\n::error::injected": 9 } })],
+  ])("exits 0 with no baseline when %s", (_name, live) => {
+    const r = drop(live, meta({ meetings: 1 }));
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("no baseline");
+  });
+
+  it.each<[string, string | undefined]>([
+    ["missing", undefined],
+    ["empty", ""],
+    ["malformed JSON", '{"driveFileCounts":'],
+    ["the wrong shape", '{"counts":{}}'],
+    ["holding a bad count", meta({ meetings: "many" })],
+    ["holding a root name that is not a plain key", meta({ "two words": 3 })],
+  ])("exits 2 when the NEW file is %s, whatever the live file says", (_name, fresh) => {
+    for (const live of [meta(FIVE), undefined]) {
+      const r = drop(live, fresh);
+      expect(r.code).toBe(2);
+      expect(r.err).toContain("drive-drop:");
+      expect(r.out).toBe("");
+    }
+  });
+
+  it("exits 2 on wrong usage", () => {
+    expect(run("drive-drop.sh").code).toBe(2);
+    expect(run("drive-drop.sh", [join(tmp, "one.json")]).code).toBe(2);
+    expect(run("drive-drop.sh", ["a", "b", "c"]).code).toBe(2);
   });
 });
 
@@ -168,10 +279,12 @@ describe("deploy-decision.sh", () => {
   const decide = (status: string, body: string | undefined, extra: Record<string, string> = {}) => {
     rmSync(join(tmp, "out.txt"), { force: true });
     const file = join(tmp, "deployed.txt");
+    rmSync(file, { force: true });
     if (body !== undefined) writeFileSync(file, body);
     return run("deploy-decision.sh", [], {
       NEW_HASH: NEW,
       DEGRADED: "false",
+      DRIVE_DROP: "false",
       DEPLOYED_STATUS: status,
       DEPLOYED_FILE: file,
       GITHUB_OUTPUT: join(tmp, "out.txt"),
@@ -182,7 +295,7 @@ describe("deploy-decision.sh", () => {
     return spawnSync("cat", [join(tmp, "out.txt")], { encoding: "utf8" }).stdout;
   };
 
-  it("deploys when nothing is deployed yet (404)", () => {
+  it("deploys a healthy build when nothing is deployed yet (404)", () => {
     expect(decide("404", "<html>not found</html>").code).toBe(0);
     expect(outputs()).toBe("deploy=true\nreason=changed\n");
   });
@@ -213,56 +326,178 @@ describe("deploy-decision.sh", () => {
     expect(outputs()).toContain("deploy=true");
   });
 
-  it("fails a degraded build even when it is identical to the live site", () => {
-    const r = decide("200", `${NEW}\n`, { DEGRADED: "true" });
-    expect(r.code).toBe(1);
-    expect(r.out).toContain("::error::");
-    expect(outputs()).toBe("deploy=false\nreason=degraded-blocked\n");
+  // The whole truth table. "Bad" is a degraded build (DEGRADED) or a Drive listing drop (DRIVE_DROP):
+  // either one, with no exception for any HTTP status, is a failed run unless allow_degraded is true.
+  const SAME: [string, string] = ["200", `${NEW}\n`];
+  const DIFFERENT: [string, string] = ["200", `${OTHER}\n`];
+  const NOTHING_LIVE: [string, string] = ["404", "<html>Site not found</html>"];
+  const UNREACHABLE: [string, undefined] = ["000", undefined];
+  const BAD: Array<[string, Record<string, string>]> = [
+    ["degraded", { DEGRADED: "true" }],
+    ["a Drive listing drop", { DRIVE_DROP: "true" }],
+    ["degraded and a Drive listing drop", { DEGRADED: "true", DRIVE_DROP: "true" }],
+  ];
+
+  describe.each(BAD)("%s", (_name, bad) => {
+    it.each<[string, [string, string | undefined]]>([
+      ["identical to the live site", SAME],
+      ["different from the live site", DIFFERENT],
+      ["build-hash.txt answers 404 (first deploy, or the old site during DNS cutover)", NOTHING_LIVE],
+      ["the live site could not be reached (000)", UNREACHABLE],
+    ])("fails and does not deploy: %s", (_case, [status, body]) => {
+      const r = decide(status, body, bad);
+      expect(r.code).toBe(1);
+      expect(r.out).toContain("::error::");
+      expect(outputs()).toBe("deploy=false\nreason=degraded-blocked\n");
+    });
+
+    it("deploys with a warning when allow_degraded is true and the build differs, whatever the status", () => {
+      for (const [status, body] of [DIFFERENT, NOTHING_LIVE, UNREACHABLE]) {
+        const r = decide(status, body, { ...bad, ALLOW_DEGRADED: "true" });
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("::warning::");
+        expect(r.out).not.toContain("::error::");
+        expect(outputs()).toBe("deploy=true\nreason=degraded-allowed\n");
+      }
+    });
+
+    it("skips with a warning when allow_degraded is true and the build is identical", () => {
+      const r = decide(...SAME, { ...bad, ALLOW_DEGRADED: "true" });
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("::warning::");
+      expect(outputs()).toBe("deploy=false\nreason=unchanged-degraded-allowed\n");
+    });
+
+    it("only the exact string true enables allow_degraded", () => {
+      for (const allow of ["1", "TRUE", "yes", "", "false"]) {
+        expect(decide(...DIFFERENT, { ...bad, ALLOW_DEGRADED: allow }).code, allow).toBe(1);
+      }
+    });
   });
 
-  it("skips a degraded identical build with a warning when allow_degraded is true", () => {
-    const r = decide("200", `${NEW}\n`, { DEGRADED: "true", ALLOW_DEGRADED: "true" });
-    expect(r.code).toBe(0);
-    expect(r.out).toContain("::warning::");
-    expect(outputs()).toBe("deploy=false\nreason=unchanged-degraded-allowed\n");
+  it("has no first-deploy exception: no reason other than changed, unchanged, and the degraded three exists", () => {
+    const reasons = new Set<string>();
+    for (const [status, body] of [SAME, DIFFERENT, NOTHING_LIVE, UNREACHABLE] as Array<[string, string | undefined]>) {
+      for (const DEGRADED of ["true", "false"]) {
+        for (const DRIVE_DROP of ["true", "false"]) {
+          for (const ALLOW_DEGRADED of ["true", "false"]) {
+            decide(status, body, { DEGRADED, DRIVE_DROP, ALLOW_DEGRADED });
+            reasons.add(/reason=(.*)/.exec(outputs())?.[1] ?? "none");
+          }
+        }
+      }
+    }
+    expect([...reasons].sort()).toEqual(["changed", "degraded-allowed", "degraded-blocked", "unchanged", "unchanged-degraded-allowed"]);
   });
 
-  it("requires DEGRADED to be exactly true or false, and writes no output otherwise", () => {
+  it("says which kind of problem blocked the deploy", () => {
+    expect(decide(...DIFFERENT, { DEGRADED: "true" }).out).toMatch(/unreachable or misconfigured/);
+    expect(decide(...DIFFERENT, { DRIVE_DROP: "true" }).out).toMatch(/far fewer files/);
+    const both = decide(...DIFFERENT, { DEGRADED: "true", DRIVE_DROP: "true" }).out;
+    expect(both).toMatch(/unreachable or misconfigured/);
+    expect(both).toMatch(/far fewer files/);
+  });
+
+  it.each(["DEGRADED", "DRIVE_DROP"])("requires %s to be exactly true or false, and writes no output otherwise", (name) => {
     for (const bad of ["", "TRUE", "1", "yes"]) {
-      const r = decide("200", `${OTHER}\n`, { DEGRADED: bad });
+      const r = decide("200", `${OTHER}\n`, { [name]: bad });
       expect(r.code).toBe(2);
-      expect(r.err).toContain("DEGRADED must be exactly");
+      expect(r.err).toContain(`${name} must be exactly`);
     }
     expect(outputs()).toBe("");
   });
+});
 
-  it("fails and does not deploy a degraded build over a live site", () => {
-    const r = decide("200", `${OTHER}\n`, { DEGRADED: "true" });
-    expect(r.code).toBe(1);
-    expect(r.out).toContain("::error::");
-    expect(outputs()).toBe("deploy=false\nreason=degraded-blocked\n");
-  });
+describe("tip-check.sh", () => {
+  // A real origin and a real clone in the temp directory; no network.
+  const git = (cwd: string, ...args: string[]): string => {
+    const r = spawnSync("git", ["-c", "user.name=Test", "-c", "user.email=none", "-c", "init.defaultBranch=main", "-c", "commit.gpgsign=false", ...args], {
+      cwd,
+      encoding: "utf8",
+      env: { PATH: process.env.PATH ?? "", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    });
+    if (r.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const commit = (cwd: string, message: string): string => {
+    git(cwd, "commit", "--allow-empty", "-m", message);
+    return git(cwd, "rev-parse", "HEAD");
+  };
+  /** An origin with one commit on main, and a clone of it. */
+  const repos = () => {
+    const origin = join(tmp, "origin");
+    const clone = join(tmp, "clone");
+    mkdirSync(origin);
+    git(origin, "init", "-q");
+    const first = commit(origin, "first");
+    git(tmp, "clone", "-q", origin, clone);
+    return { origin, clone, first };
+  };
+  const check = (cwd: string, sha: string | undefined) => {
+    rmSync(join(tmp, "out.txt"), { force: true });
+    const r = spawnSync("bash", [join(scripts, "tip-check.sh")], {
+      cwd,
+      encoding: "utf8",
+      env: { PATH: process.env.PATH ?? "", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GITHUB_OUTPUT: join(tmp, "out.txt"), ...(sha === undefined ? {} : { GITHUB_SHA: sha }) },
+    });
+    const output = spawnSync("cat", [join(tmp, "out.txt")], { encoding: "utf8" }).stdout;
+    return { code: r.status, out: r.stdout, err: r.stderr, output };
+  };
 
-  it("fails on a degraded build when the status check itself failed (000)", () => {
-    expect(decide("000", undefined, { DEGRADED: "true" }).code).toBe(1);
-  });
-
-  it("deploys a degraded build when allow_degraded is true, with a warning", () => {
-    const r = decide("200", `${OTHER}\n`, { DEGRADED: "true", ALLOW_DEGRADED: "true" });
+  it("says current=true when the run's commit is the tip of main", () => {
+    const { clone, first } = repos();
+    const r = check(clone, first);
     expect(r.code).toBe(0);
-    expect(r.out).toContain("::warning::");
-    expect(outputs()).toBe("deploy=true\nreason=degraded-allowed\n");
+    expect(r.output).toBe("current=true\n");
+    expect(r.out).not.toContain("::notice::");
   });
 
-  it("deploys a degraded first build (404) with a warning", () => {
-    const r = decide("404", "nope", { DEGRADED: "true" });
+  it("says current=false, with a notice and exit 0, once main has moved on (a re-run of an old run)", () => {
+    const { origin, clone, first } = repos();
+    const second = commit(origin, "second");
+    const r = check(clone, first);
     expect(r.code).toBe(0);
-    expect(r.out).toContain("::warning::");
-    expect(outputs()).toBe("deploy=true\nreason=degraded-first-deploy\n");
+    expect(r.output).toBe("current=false\n");
+    expect(r.out).toContain("::notice::");
+    expect(r.out).toContain(first);
+    expect(r.out).toContain(second);
+    // The newer run itself is current, from the same stale clone: the answer comes from origin.
+    expect(check(clone, second).output).toBe("current=true\n");
   });
 
-  it("only the exact string true enables allow_degraded", () => {
-    expect(decide("200", `${OTHER}\n`, { DEGRADED: "true", ALLOW_DEGRADED: "1" }).code).toBe(1);
+  it("looks at main only, not at whatever branch moved last", () => {
+    const { origin, clone, first } = repos();
+    git(origin, "checkout", "-q", "-b", "other");
+    commit(origin, "on another branch");
+    expect(check(clone, first).output).toBe("current=true\n");
+  });
+
+  it("exits 2 with no output when the tip cannot be read", () => {
+    const { origin, clone, first } = repos();
+    rmSync(origin, { recursive: true, force: true });
+    const gone = check(clone, first);
+    expect(gone.code).toBe(2);
+    expect(gone.output).toBe("");
+    expect(gone.out).toContain("::error::");
+  });
+
+  it("exits 2 when origin has no main branch", () => {
+    const origin = join(tmp, "origin");
+    const clone = join(tmp, "clone");
+    mkdirSync(origin);
+    git(origin, "init", "-q", "-b", "trunk");
+    const sha = commit(origin, "first");
+    git(tmp, "clone", "-q", origin, clone);
+    const r = check(clone, sha);
+    expect(r.code).toBe(2);
+    expect(r.output).toBe("");
+  });
+
+  it("requires GITHUB_SHA", () => {
+    const { clone } = repos();
+    const r = check(clone, undefined);
+    expect(r.code).not.toBe(0);
+    expect(r.output).toBe("");
   });
 });
 

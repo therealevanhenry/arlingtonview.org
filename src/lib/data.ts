@@ -1,6 +1,6 @@
 import { buildArchive, visibleFiles, type ArchiveRow } from "./archive";
-import { loadCalendar } from "./calendar";
-import { loadAllFolders } from "./drive";
+import { loadCalendar, type CalendarResult } from "./calendar";
+import { DRIVE_ROOTS, loadAllFolders, type DriveRoot, type FolderResult } from "./drive";
 import { getSettings, type Settings } from "./settings";
 import { nowInNewYork } from "./time";
 
@@ -29,6 +29,81 @@ const defaultDeps: SiteDataDeps = {
   apiKey: () => process.env.GOOGLE_API_KEY,
 };
 
+/**
+ * Whether this build may replace a healthy site. `scripts/build-health.sh` reads the one line
+ * `healthLine` makes of it, so this is the only place that decides.
+ * - degraded: Google was reachable in principle (a key, an ID) and something still did not load.
+ * - unconfigured: nothing failed, but the Drive key or an ID is missing, so part of the site is a fallback.
+ */
+export type Health =
+  | { state: "ok"; offline: boolean }
+  | { state: "unconfigured"; what: string[] }
+  | { state: "degraded"; reasons: string[] };
+
+/** Drive failure reasons that mean "not asked", not "asked and failed" (see `guarded` in drive.ts). */
+const NOT_ASKED = new Set(["no API key", "no folder ID", "offline"]);
+
+/** One line, no parentheses or semicolons: the reasons sit inside `(...)`, separated by `; `. */
+const safeReason = (reason: string): string =>
+  reason.replace(/[^A-Za-z0-9 .,:=_-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+
+export function buildHealth(
+  settings: Settings,
+  calendar: CalendarResult,
+  folders: Record<DriveRoot, FolderResult>,
+  offline: boolean,
+): Health {
+  const calendarBlank = settings.calendarId.trim() === "";
+  const reasons: string[] = [];
+  const what: string[] = [];
+  let noKey = false;
+  for (const root of DRIVE_ROOTS) {
+    const folder = folders[root];
+    if (folder.ok) continue;
+    if (!NOT_ASKED.has(folder.reason)) reasons.push(`drive ${root}: ${safeReason(folder.reason)}`);
+    else if (folder.reason === "no API key") noKey = true;
+    else if (folder.reason === "no folder ID") what.push(`no folder ID for ${root}`);
+  }
+  if (!calendar.ok && !calendarBlank && !offline) reasons.push(`calendar: ${safeReason(calendar.reason)}`);
+  if (reasons.length > 0) return { state: "degraded", reasons };
+  if (offline) return { state: "ok", offline: true };
+  if (noKey) what.unshift("no API key");
+  if (calendarBlank) what.push("calendarId is blank");
+  return what.length > 0 ? { state: "unconfigured", what } : { state: "ok", offline: false };
+}
+
+/** `[site-data] health: ok`, `... ok (offline)`, `... unconfigured (<what>)`, or `... degraded (<reasons>)`. */
+export function healthLine(health: Health): string {
+  const detail =
+    health.state === "degraded"
+      ? `degraded (${health.reasons.join("; ")})`
+      : health.state === "unconfigured"
+        ? `unconfigured (${health.what.join("; ")})`
+        : health.offline
+          ? "ok (offline)"
+          : "ok";
+  return `[site-data] health: ${detail}`;
+}
+
+/** Visible files per root that listed ok, in `DRIVE_ROOTS` order. A root that did not list has no entry. */
+export function driveFileCounts(folders: Record<DriveRoot, FolderResult>): Partial<Record<DriveRoot, number>> {
+  const counts: Partial<Record<DriveRoot, number>> = {};
+  for (const root of DRIVE_ROOTS) {
+    const folder = folders[root];
+    if (folder.ok) counts[root] = visibleFiles(folder.files).length;
+  }
+  return counts;
+}
+
+/**
+ * The body of `dist/build-meta.json`: only the per-root file counts, which the deploy workflow compares
+ * with the live site's copy (`scripts/drive-drop.sh`). No timestamp: the file is part of the build hash
+ * and must change only when a count does.
+ */
+export function buildMetaJson(folders: Record<DriveRoot, FolderResult>): string {
+  return `${JSON.stringify({ driveFileCounts: driveFileCounts(folders) })}\n`;
+}
+
 /** A loader that fetches once and hands every caller the same promise. Injectable for tests. */
 export function createSiteDataLoader(deps: SiteDataDeps = defaultDeps): () => Promise<SiteData> {
   let memo: Promise<SiteData> | undefined;
@@ -40,11 +115,15 @@ export function createSiteDataLoader(deps: SiteDataDeps = defaultDeps): () => Pr
         deps.loadCalendar(settings, now),
         deps.loadAllFolders(settings, deps.apiKey()),
       ]);
-      // One recognizable line for scripts/build-health.sh. The reason is a fixed short string from the
-      // loader, never a response body. Quiet when the calendar was deliberately not fetched.
-      if (!calendar.ok && settings.calendarId.trim() !== "" && process.env.OFFLINE !== "1") {
+      const offline = process.env.OFFLINE === "1";
+      // For people reading the log (the Drive loader prints its own `[drive]` line per failed root). The
+      // reason is a fixed short string from the loader, never a response body. Quiet when the calendar
+      // was deliberately not fetched.
+      if (!calendar.ok && settings.calendarId.trim() !== "" && !offline) {
         console.warn(`[calendar] not loaded: ${calendar.reason}; the meetings list will be empty`);
       }
+      // For scripts/build-health.sh: exactly one line per build, after every loader has finished.
+      console.log(healthLine(buildHealth(settings, calendar, folders, offline)));
       const meetings = calendar.ok ? calendar.meetings : [];
       const rows = buildArchive(meetings, { meetings: folders.meetings, presentations: folders.presentations });
       return { settings, now, calendar, folders, rows };

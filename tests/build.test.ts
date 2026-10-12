@@ -186,6 +186,19 @@ describe("build output (dist/)", () => {
     expect(readFileSync(file, "utf8"), "dist/CNAME content").toBe("arlingtonview.org");
   });
 
+  it("11. dist/build-meta.json holds driveFileCounts, whole numbers per root, and nothing else", () => {
+    // The deploy workflow compares this file with the live site's copy (scripts/drive-drop.sh). It is part
+    // of the build hash, so it must hold nothing that changes when the file counts do not.
+    const file = join(DIST, "build-meta.json");
+    expect(existsSync(file), "dist/build-meta.json is missing (src/pages/build-meta.json.ts writes it)").toBe(true);
+    const meta = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    expect(Object.keys(meta), "dist/build-meta.json: top-level keys").toEqual(["driveFileCounts"]);
+    const counts = meta.driveFileCounts as Record<string, unknown>;
+    expect(typeof counts === "object" && counts !== null && !Array.isArray(counts), "driveFileCounts must be an object").toBe(true);
+    const bad = Object.entries(counts).filter(([, n]) => !Number.isSafeInteger(n) || (n as number) < 0);
+    expect(bad, "driveFileCounts: every listed root has a whole, non-negative number of visible files").toEqual([]);
+  });
+
   it("9. dist/_preview does not exist", () => {
     expect(existsSync(join(DIST, "_preview")), "dist/_preview must never be in a checked or deployed build").toBe(false);
   });
