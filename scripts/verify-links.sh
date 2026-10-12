@@ -4,14 +4,26 @@
 # Usage: scripts/verify-links.sh   (run `npm run build` first to include the built HTML)
 #
 # - Browser-like user agent, follows redirects, 20 s timeout, one request per unique URL.
-# - www.arlingtonva.us answers 403 to every non-browser client; that is reported as a warning
-#   ("bot-blocked, cannot verify"), never a failure. Verify those by hand in a browser.
+# - Hosts in is_bot_blocked() below answer 403 to every non-browser client. A 403 from them is
+#   reported as a warning ("bot-blocked, cannot verify"), never a failure; verify those by hand in
+#   a browser. Any other status from those hosts (404, 410, 5xx, DNS, timeout) still fails, and a
+#   403 from any other host fails.
 # - Google Drive/Docs/Calendar URLs are skipped (login redirects make the status meaningless).
 # - Exit status is non-zero only for real failures: 404, 410, other 4xx, 5xx, DNS, TLS, timeout.
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+
+# Bot-blocked hosts: keep this the single list. Each host and its subdomains.
+# Mirror any change in the `exclude` list in lychee.toml.
+is_bot_blocked() {
+  case "$1" in
+    arlingtonva.us | *.arlingtonva.us) return 0 ;;
+    researchgate.net | *.researchgate.net) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
@@ -43,16 +55,13 @@ while IFS= read -r url; do
       printf 'OK    %s %s\n' "$code" "$url"
       ;;
     403)
-      case "$host" in
-        arlingtonva.us | *.arlingtonva.us)
-          printf 'WARN  403 (bot-blocked, cannot verify) %s\n' "$url"
-          warn=$((warn + 1))
-          ;;
-        *)
-          printf 'FAIL  403 %s\n' "$url"
-          fail=$((fail + 1))
-          ;;
-      esac
+      if is_bot_blocked "$host"; then
+        printf 'WARN  403 (bot-blocked, cannot verify) %s\n' "$url"
+        warn=$((warn + 1))
+      else
+        printf 'FAIL  403 %s\n' "$url"
+        fail=$((fail + 1))
+      fi
       ;;
     000)
       printf 'FAIL  000 (DNS, TLS, connection, or timeout) %s\n' "$url"
@@ -65,5 +74,5 @@ while IFS= read -r url; do
   esac
 done < "$tmp"
 
-printf '\n%s checked, %s failed, %s county URLs need a manual look\n' "$total" "$fail" "$warn"
+printf '\n%s checked, %s failed, %s bot-blocked URLs need a manual look\n' "$total" "$fail" "$warn"
 [ "$fail" -eq 0 ]

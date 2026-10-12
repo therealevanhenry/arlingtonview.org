@@ -14,9 +14,12 @@ jobs:
     permissions:
       contents: read
       issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_TITLE: Broken external links
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -31,28 +34,33 @@ jobs:
           output: lychee/out.md
           fail: false
 
-      - name: Add manual-check note to report
-        if: steps.lychee.outputs.exit_code != 0
+      - name: Open or update the issue
         run: |
-          {
-            printf '\n\n---\n'
-            printf 'Links to arlingtonva.us (county pages) are not checked automatically: the county site blocks '
-            printf 'non-browser clients with HTTP 403. They need a manual look in a real browser.\n'
-          } >> lychee/out.md
-
-      - name: Find existing issue
-        id: existing
-        if: steps.lychee.outputs.exit_code != 0
+          set -eu
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search 'in:title "Broken external links"' --json number,title \
+            --jq '[.[] | select(.title == "Broken external links")][0].number // empty')
+          today=$(date -u +%Y-%m-%d)
+          if [ "${LYCHEE_EXIT_CODE}" != "0" ]; then
+            {
+              printf 'Links to arlingtonva.us (county) and researchgate.net are not checked automatically: '
+              printf 'those sites block non-browser clients with HTTP 403. They need a manual look in a real browser.\n\n'
+              cat lychee/out.md
+            } > lychee/issue-body.md
+            if [ -n "$number" ]; then
+              gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --body-file lychee/issue-body.md
+              gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "Link check run on $today still found broken links; the issue body is updated."
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body-file lychee/issue-body.md
+            fi
+          elif [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "Link check run on $today was clean. Close this issue if the problems are resolved."
+          fi
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search 'in:title "Broken external links"' --json number,title --jq '[.[] | select(.title == "Broken external links")][0].number // empty')
-          echo "number=$number" >> "$GITHUB_OUTPUT"
+          LYCHEE_EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
 
-      - name: Create or update issue
-        if: steps.lychee.outputs.exit_code != 0
-        uses: peter-evans/create-issue-from-file@v6
-        with:
-          title: Broken external links
-          content-filepath: lychee/out.md
-          issue-number: ${{ steps.existing.outputs.number }}
+      - name: Fail the job if links were broken
+        if: steps.lychee.outputs.exit_code != '0'
+        run: |
+          echo "lychee reported broken links (exit code ${{ steps.lychee.outputs.exit_code }})"
+          exit 1

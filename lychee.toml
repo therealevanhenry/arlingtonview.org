@@ -1,10 +1,12 @@
 # lychee configuration for the weekly external link check (.github/workflows/links.yml).
 #
-# County links: www.arlingtonva.us answers HTTP 403 to every non-browser client, real and fake
-# paths alike. lychee's `accept` list is global (it cannot be scoped to one host), so accepting 403
-# would also hide real 403s elsewhere. Instead arlingtonva.us is excluded entirely: county links are
-# NOT checked automatically and need a manual look (the issue body says so).
-# scripts/verify-links.sh reports them as warnings; verify them in a real browser.
+# Bot-blocked hosts: www.arlingtonva.us (county) and researchgate.net answer HTTP 403 to every
+# non-browser client, real and fake paths alike. lychee's `accept` list is global (it cannot be
+# scoped to one host), so accepting 403 would also hide real 403s elsewhere. Instead both hosts
+# (and their subdomains) are excluded entirely: links to them are NOT checked automatically and
+# need a manual look in a real browser (the issue body says so).
+# scripts/verify-links.sh keeps the same list (is_bot_blocked) and reports them as warnings.
+# Keep the two lists in sync.
 #
 # Internal links are covered by tests/build.test.ts, so only https URLs are checked here.
 
@@ -21,6 +23,7 @@ include_mail = false
 
 exclude = [
   '^https?://([^/]+\.)?arlingtonva\.us(/|$)',
+  '^https?://([^/]+\.)?researchgate\.net(/|$)',
   '^https?://drive\.google\.com(/|$)',
   '^https?://docs\.google\.com(/|$)',
   '^https?://calendar\.google\.com(/|$)',
