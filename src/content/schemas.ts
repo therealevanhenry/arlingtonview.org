@@ -3,10 +3,13 @@ import { z } from "astro/zod";
 /** Month in `YYYY-MM` form. */
 const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "expected YYYY-MM");
 
+// Every object is strict: board members edit these files in the GitHub web editor, so a typo such as
+// `calandarId` must fail the build instead of silently falling back to a blank.
+
 /** Blank is allowed by the schema; `isConfigured` reports which values are still blank. */
 const driveId = z.string();
 
-export const settingsSchema = z.object({
+export const settingsSchema = z.strictObject({
   siteName: z.string().min(1),
   shortName: z.string().min(1),
   siteUrl: z.url(),
@@ -14,8 +17,9 @@ export const settingsSchema = z.object({
   calendarId: z.string(),
   meetingRule: z.string().min(1),
   virtualLinkNote: z.string().min(1),
-  joinFormUrl: z.string(),
-  drive: z.object({
+  /** Blank at launch (no form); otherwise an https:// URL. */
+  joinFormUrl: z.union([z.literal(""), z.url({ protocol: /^https$/ })]),
+  drive: z.strictObject({
     bylaws: driveId,
     bylawsCurrentFileId: driveId,
     meetings: driveId,
@@ -26,20 +30,20 @@ export const settingsSchema = z.object({
   }),
 });
 
-export const boardSchema = z.object({
-  term: z.object({ start: month, end: month }).optional(),
-  officers: z.array(z.object({ role: z.string().min(1), name: z.string().min(1) })),
+export const boardSchema = z.strictObject({
+  term: z.strictObject({ start: month, end: month }).optional(),
+  officers: z.array(z.strictObject({ role: z.string().min(1), name: z.string().min(1) })),
   blockCaptains: z.array(
-    z.object({ block: z.number().int().positive(), names: z.array(z.string().min(1)) }),
+    z.strictObject({ block: z.number().int().positive(), names: z.array(z.string().min(1)) }),
   ),
 });
 
-export const resourcesSchema = z.object({
+export const resourcesSchema = z.strictObject({
   groups: z.array(
-    z.object({
+    z.strictObject({
       title: z.string().min(1),
       links: z.array(
-        z.object({
+        z.strictObject({
           label: z.string().min(1),
           url: z.string().startsWith("https://"),
           note: z.string().optional(),

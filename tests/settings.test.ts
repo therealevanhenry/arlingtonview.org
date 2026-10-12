@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { boardSchema, resourcesSchema, settingsSchema } from "../src/content.config";
-import { getBoard, getResources, getSettings, isConfigured, type Settings } from "../src/lib/settings";
+import { getBoard, getResources, getSettings, isConfigured, parseContent, type Settings } from "../src/lib/settings";
 
 async function load(file: string): Promise<unknown> {
   return parse(await fs.readFile(`src/content/${file}`, "utf8"));
@@ -18,19 +18,69 @@ describe("settingsSchema", () => {
     expect(settings.contactEmail).toBe("president@arlingtonview.org");
   });
 
-  it("has exactly the seven drive keys", async () => {
-    const settings = settingsSchema.parse(await load("settings.yaml"));
-    expect(Object.keys(settings.drive).sort()).toEqual(
-      [
-        "bylaws",
-        "bylawsCurrentFileId",
-        "history",
-        "letters",
-        "meetings",
-        "neighborhoodPlan",
-        "presentations",
-      ].sort(),
-    );
+  it("rejects an extra drive key", async () => {
+    const settings = (await load("settings.yaml")) as { drive: Record<string, string> };
+    const withExtra = { ...settings, drive: { ...settings.drive, archive: "X" } };
+    expect(() => settingsSchema.parse(withExtra)).toThrow();
+  });
+
+  it("rejects a misspelled top-level key", async () => {
+    const settings = (await load("settings.yaml")) as Record<string, unknown>;
+    const { calendarId, ...rest } = settings;
+    expect(() => settingsSchema.parse({ ...rest, calandarId: calendarId })).toThrow();
+    expect(() => settingsSchema.parse({ ...settings, calandarId: "x" })).toThrow();
+  });
+
+  it("requires joinFormUrl to be blank or an https:// URL", async () => {
+    const settings = (await load("settings.yaml")) as Record<string, unknown>;
+    for (const ok of ["", "https://forms.example.org/join"]) {
+      expect(() => settingsSchema.parse({ ...settings, joinFormUrl: ok }), ok).not.toThrow();
+    }
+    for (const bad of ["http://forms.example.org/join", "forms.example.org", "ftp://x.test/", "https://", "javascript:alert(1)"]) {
+      expect(() => settingsSchema.parse({ ...settings, joinFormUrl: bad }), bad).toThrow();
+    }
+  });
+});
+
+describe("board and resources strictness", () => {
+  it("rejects unknown keys at every level", () => {
+    const board = { officers: [{ role: "r", name: "n" }], blockCaptains: [] };
+    expect(() => boardSchema.parse({ ...board, officer: [] })).toThrow();
+    expect(() => boardSchema.parse({ ...board, officers: [{ role: "r", name: "n", phone: "1" }] })).toThrow();
+    const res = { groups: [{ title: "g", links: [{ label: "l", url: "https://e.org/" }] }] };
+    expect(() => resourcesSchema.parse(res)).not.toThrow();
+    expect(() => resourcesSchema.parse({ ...res, group: [] })).toThrow();
+    expect(() => resourcesSchema.parse({ groups: [{ title: "g", links: [{ label: "l", url: "https://e.org/", notes: "x" }] }] })).toThrow();
+  });
+});
+
+describe("parseContent error messages", () => {
+  it("names the file and the failing path for a schema error, on one line", () => {
+    const text = "officers:\n  - role: A\n    name: B\n  - role: C\n    name: D\n  - role: E\n    name: F\n  - role: G\n    name: H\n  - role: I\nblockCaptains: []\n";
+    let message = "";
+    try {
+      parseContent("board.yaml", text, boardSchema);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(/^src\/content\/board\.yaml: officers\[4\]\.name: /);
+    expect(message).not.toContain("\n");
+  });
+
+  it("names the file and the line for a YAML syntax error, on one line", () => {
+    let message = "";
+    try {
+      parseContent("settings.yaml", "siteName: ok\ndrive: [unclosed\n", settingsSchema);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(/^src\/content\/settings\.yaml: line \d+/);
+    expect(message).not.toContain("\n");
+  });
+
+  it("names the key for an unknown key", async () => {
+    const text = await fs.readFile("src/content/settings.yaml", "utf8");
+    expect(() => parseContent("settings.yaml", `${text}calandarId: x\n`, settingsSchema)).toThrow(/settings\.yaml: .*calandarId/);
   });
 });
 
