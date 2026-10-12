@@ -353,6 +353,23 @@ a:hover {
   list-style: none;
 }
 
+/* Exactly four entries: 1 column, 2 x 2 from 36rem, 4 across from 64rem. Never 3 + 1. */
+.entries-four {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 36rem) {
+  .entries-four {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 64rem) {
+  .entries-four {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
 .entry {
   padding-block-start: var(--space-3);
   border-block-start: 1px solid var(--rule);

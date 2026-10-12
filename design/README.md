@@ -134,6 +134,7 @@ by source order and nothing needs `!important`.
 | `.callout` | same ground and padding, no cornice, no accent bar |
 | `.cornice` | see above; next-meeting block only |
 | `.entries` / `.entry` / `.entry-title` | ruled entry list: auto-fit grid (min `min(15rem, 100%)`, so a 72rem container gives 1 column on phones, 2 x 2 at mid widths, 4 across at full width, never 3 + 1), each entry a 1px top rule, a Garamond heading link, one line of body text |
+| `.entries-four` | modifier on `.entries` for sets of exactly four: 1 column, 2 x 2 from 36rem, 4 across from 64rem (`min-width` queries). Columns are 249px wide at the 36rem switch and 216px at the 64rem switch (gutters and 2rem gap included), so none is under 12rem. Use it instead of auto-fit, which always has a width band that lands 3 + 1 |
 | `.table` | left-aligned table with 1px row rules and tabular figures. Under 40rem each row restacks as a block and each cell is labelled from `td[data-label]`, so every `td` needs a `data-label` |
 | `.files` / `.file` / `.file-date` | plain list: a link plus a secondary date |
 | `.site-header`, `.brand`, `.site-nav` and friends | `src/components/Header.astro` |
