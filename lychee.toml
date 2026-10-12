@@ -8,6 +8,10 @@
 # scripts/verify-links.sh keeps the same list (is_bot_blocked) and reports them as warnings.
 # Keep the two lists in sync.
 #
+# The site's own origin (siteUrl in src/content/settings.yaml) is excluded too: every page carries an
+# absolute canonical URL, and before DNS cutover that origin is still the old site, where new paths 404.
+# Internal links are verified by tests/build.test.ts.
+#
 # Internal links are covered by tests/build.test.ts, so only https URLs are checked here.
 
 scheme = ["https"]
@@ -27,5 +31,6 @@ exclude = [
   '^https?://drive\.google\.com(/|$)',
   '^https?://docs\.google\.com(/|$)',
   '^https?://calendar\.google\.com(/|$)',
+  '^https?://arlingtonview\.org(/|$)',
   '^mailto:',
 ]

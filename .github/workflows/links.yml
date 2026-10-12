@@ -34,14 +34,32 @@ jobs:
           output: lychee/out.md
           fail: false
 
+      # lychee writes its report only when it ran to the end. No report means it crashed or was
+      # misconfigured, which must not be reported as "broken links".
+      - name: Classify the result
+        id: classify
+        run: |
+          set -eu
+          if [ "$LYCHEE_EXIT_CODE" = "0" ]; then
+            outcome=clean
+          elif [ -s lychee/out.md ]; then
+            outcome=broken
+          else
+            outcome=crashed
+          fi
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+        env:
+          LYCHEE_EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
+
       - name: Open or update the issue
+        if: steps.classify.outputs.outcome != 'crashed'
         run: |
           set -eu
           number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
             --search 'in:title "Broken external links"' --json number,title \
             --jq '[.[] | select(.title == "Broken external links")][0].number // empty')
           today=$(date -u +%Y-%m-%d)
-          if [ "${LYCHEE_EXIT_CODE}" != "0" ]; then
+          if [ "$OUTCOME" = "broken" ]; then
             {
               printf 'Links to arlingtonva.us (county) and researchgate.net are not checked automatically: '
               printf 'those sites block non-browser clients with HTTP 403. They need a manual look in a real browser.\n\n'
@@ -57,10 +75,17 @@ jobs:
             gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "Link check run on $today was clean. Close this issue if the problems are resolved."
           fi
         env:
-          LYCHEE_EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
+          OUTCOME: ${{ steps.classify.outputs.outcome }}
 
-      - name: Fail the job if links were broken
-        if: steps.lychee.outputs.exit_code != '0'
+      - name: Fail the job unless the links were clean
+        if: steps.classify.outputs.outcome != 'clean'
         run: |
-          echo "lychee reported broken links (exit code ${{ steps.lychee.outputs.exit_code }})"
+          if [ "$OUTCOME" = "crashed" ]; then
+            echo "::error::lychee did not produce a report (exit code $LYCHEE_EXIT_CODE): crash or configuration error. No issue was created or edited."
+          else
+            echo "::error::lychee reported broken links (exit code $LYCHEE_EXIT_CODE); see the issue."
+          fi
           exit 1
+        env:
+          OUTCOME: ${{ steps.classify.outputs.outcome }}
+          LYCHEE_EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
