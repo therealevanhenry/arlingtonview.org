@@ -1,0 +1,23 @@
+---
+import LinkGroups from "../components/LinkGroups.astro";
+import Base from "../layouts/Base.astro";
+import { lastUpdated, loadSiteData } from "../lib/data";
+import { getResources } from "../lib/settings";
+
+const data = await loadSiteData();
+const groups = await getResources();
+---
+
+<Base
+  title="Resources"
+  description="Arlington County services, emergency and non-emergency numbers, and civic organizations for Arlington View residents."
+  lastUpdated={lastUpdated(data)}
+>
+  <div class="sections">
+    <section class="stack">
+      <h1>Resources</h1>
+      <p class="lead">Arlington County services, ways to report a problem, and civic organizations for residents of Arlington View.</p>
+    </section>
+    <LinkGroups groups={groups} />
+  </div>
+</Base>

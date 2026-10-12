@@ -104,3 +104,14 @@ export function formatFileDate(file: DriveFile): FileDate | undefined {
   }
   return formatModifiedDate(file);
 }
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
+/** `2026-09` as `September 2026`. Takes the board schema's `YYYY-MM` form, which is already validated. */
+export function formatTermMonth(month: string): string {
+  const [year, number] = month.split("-");
+  return `${MONTH_NAMES[Number(number) - 1]} ${year}`;
+}

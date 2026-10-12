@@ -32,7 +32,14 @@ export const settingsSchema = z.strictObject({
 
 export const boardSchema = z.strictObject({
   term: z.strictObject({ start: month, end: month }).optional(),
-  officers: z.array(z.strictObject({ role: z.string().min(1), name: z.string().min(1) })),
+  officers: z.array(
+    z.strictObject({
+      role: z.string().min(1),
+      name: z.string().min(1),
+      kind: z.enum(["elected", "appointed", "honorary"]),
+    }),
+  ),
+  /** An empty `names` is a vacant block. */
   blockCaptains: z.array(
     z.strictObject({ block: z.number().int().positive(), names: z.array(z.string().min(1)) }),
   ),

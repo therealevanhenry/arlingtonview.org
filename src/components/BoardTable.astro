@@ -1,0 +1,72 @@
+---
+import { formatTermMonth } from "../lib/time";
+import type { Board } from "../lib/settings";
+
+interface Props {
+  board: Board;
+  /** The role address that block-captain volunteers write to. */
+  contactEmail: string;
+}
+
+const { board, contactEmail } = Astro.props;
+
+// The distinction between elected, appointed, and honorary roles is carried by these headings alone.
+const groups = [
+  { kind: "elected", title: "Elected officers" },
+  { kind: "appointed", title: "Appointed" },
+  { kind: "honorary", title: "Honorary" },
+] as const;
+
+const shown = groups
+  .map((g) => ({ ...g, officers: board.officers.filter((o) => o.kind === g.kind) }))
+  .filter((g) => g.officers.length > 0);
+
+const isVacant = (name: string) => name === "Vacant";
+const blocks = board.blockCaptains.map((b) => ({ block: b.block, names: b.names }));
+const anyVacant = blocks.some((b) => b.names.length === 0);
+---
+
+<section class="stack" aria-labelledby="board">
+  <h2 id="board">Board</h2>
+  {board.term && <p>Term: {formatTermMonth(board.term.start)} to {formatTermMonth(board.term.end)}</p>}
+  {
+    shown.map((g) => (
+      <div class="stack">
+        <h3>{g.title}</h3>
+        <dl class="schedule">
+          {g.officers.map((o) => (
+            <div class="schedule-item">
+              <dt class="schedule-date">{o.role}</dt>
+              <dd class="schedule-details">
+                {isVacant(o.name) ? <span class="soft">Vacant</span> : o.name}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    ))
+  }
+</section>
+<section class="stack" aria-labelledby="block-captains">
+  <h2 id="block-captains">Block captains</h2>
+  <dl class="schedule">
+    {
+      blocks.map((b) => (
+        <div class="schedule-item">
+          <dt class="schedule-date">Block {b.block}</dt>
+          <dd class="schedule-details">
+            {b.names.length === 0 ? <span class="soft">Vacant</span> : b.names.join(", ")}
+          </dd>
+        </div>
+      ))
+    }
+  </dl>
+  {
+    anyVacant && (
+      <p class="callout measure">
+        Some blocks need a captain. If you are interested in serving, contact the president at{" "}
+        <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.
+      </p>
+    )
+  }
+</section>

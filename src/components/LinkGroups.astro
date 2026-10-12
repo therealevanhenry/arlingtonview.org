@@ -1,0 +1,28 @@
+---
+import type { ResourceGroup } from "../lib/settings";
+
+interface Props {
+  groups: ResourceGroup[];
+}
+
+const { groups } = Astro.props;
+---
+
+<div class="link-groups">
+  {
+    groups.map((g) => (
+      <section class="link-group stack">
+        <h2>{g.title}</h2>
+        <ul class="link-list" role="list">
+          {g.links.map((l) => (
+            <li class="link-item">
+              <a href={l.url}>{l.label}</a>
+              {l.note !== undefined && " "}
+              {l.note !== undefined && <span class="soft">{l.note}</span>}
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))
+  }
+</div>

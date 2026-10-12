@@ -223,6 +223,11 @@ by source order and nothing needs `!important`.
 | `.table` | left-aligned table with 1px row rules and tabular figures. Under 40rem each row restacks as a block and each cell is labelled from `td[data-label]`, so every `td` needs a `data-label` |
 | `.files` / `.file` / `.file-date` | plain list: a link plus a secondary date. On the Documents page the date is the one parsed from the file name (`June 24, 2026`, `June 2026` when only the month is known); a file with no parsed date shows its Drive modified time prefixed `Updated` (the word sits outside the `<time>`), so it is never mistaken for the document's own date. Recently added is under that heading and shows the bare modified date |
 | `.schedule` / `.schedule-item` / `.schedule-date` / `.schedule-details` | the upcoming-meetings schedule (`MeetingList.astro`, Meetings page only): an `ol` capped at 44rem, grouped under an `h3` per New York year. Each item is a 1px `--rule` top border (none on the first of a group) with `--space-4` above and below. The date is EB Garamond 500 at `--step-1`, `--ink`, no year; the details are body sans in a wrapping flex row (time, place in `.soft`, `Agenda` link) with a `--space-4` column gap and no separator characters. Below 40rem the details sit `--space-1` under the date; from 40rem the item is a grid, date column `minmax(14rem, 18rem)`, details `1fr`, first baselines aligned |
+| `.prose` / `.prose-lead` | wrapper for rendered Markdown (the `pages` collection), which cannot carry classes. The one place nested selectors are allowed, all in `:where()`: children after the first get `--space-4` above, an `h2` gets `--space-6` above and `--space-3` to what follows. `.prose-lead` sets the first paragraph as a lead (same declarations as `.lead`, duplicated because the paragraph cannot take the class). Used on About, History, Join |
+| `.about-intro` / `.about-drawing` | About only: the rendered prose and the full house drawing (`logo.svg`, the page's one moment) in one box. The drawing is last in the markup. Under 56rem the box is a flex column and the drawing is `order`ed after the first paragraph, 180px tall, indigo. From 56rem it is a grid: prose column `--measure`, drawing column 15rem (240px), `--space-8` apart, drawing top-aligned and spanning the rows (rows have no gap, so spacing is the prose margins) |
+| `.photos` / `.photo` / `.photo-caption` | History only: the aerial photographs, a `role="list"` grid of `figure`s, 1 column, 2 from 40rem, 3 from 64rem, aligned to the top of each row, each at its own aspect ratio. The caption is the year in EB Garamond at `--step-1`. No borders, links, or lightbox |
+| `.link-groups` / `.link-group` / `.link-list` / `.link-item` | Resources only (`LinkGroups.astro`): an `h2` over a ruled list capped at 44rem; a row is the link then its note in `.soft` (wrapping, `--space-4` gap, no separator characters). From 64rem `.link-groups` is two CSS columns (balanced, a group is never split), which reads better than one long column: 20 links in four groups fit one screen at 1280px |
+| `.schedule` on a `dl` | the board roster (`BoardTable.astro`, About): a `dl` inside `.schedule`, each role/name pair a `div.schedule-item` with `dt.schedule-date` (role, Garamond label) and `dd.schedule-details` (name, or `.soft` Vacant). Block captains use the same rows (`Block 4` and its names). The kind of role (Elected officers, Appointed, Honorary) is carried by `h3` headings, not color or badges |
 | `.table-archive` | modifier on `.table` for the past-meetings table: `max-width: 52rem`; the Date, Agenda, and Minutes cells never wrap (`Not posted`, `Minutes (draft)`), Materials wraps |
 | `.file-group` | wraps one `.files` list (and its sub-heading) on the Documents page: `max-width: 44rem` |
 | `.soft` | text in `--ink-soft`; used for "Not posted" in the past-meetings table |
@@ -261,7 +266,7 @@ Three assets, by display size:
 | File | Use | Notes |
 |---|---|---|
 | `src/assets/logo-small.svg` | under about 120px tall: the header mark (44px, indigo) and the footer mark (28px, ink) | hand-authored simplification, inlined, colored by `currentColor` |
-| `src/assets/logo.svg` | about 120px tall and up | the full trace, `fill="currentColor"`; not on any page yet, and never inline it into every page (21 KB) |
+| `src/assets/logo.svg` | about 120px tall and up | the full trace, `fill="currentColor"`; inlined on About only (21 KB), never into every page |
 | `src/assets/logo-mono.svg` | same sizes as `logo.svg`, where a fixed ink color is needed (e.g. as an `img`) | identical geometry, `fill="#1B1B1F"` |
 
 The wordmark is always live text, never part of an image. The favicon is a fourth, still simpler drawing;
@@ -342,3 +347,12 @@ Two things in `dist/` ship unused, and are not worth chasing. The five `.woff` f
 referenced by fontsource's per-weight CSS, so the build copies them; browsers that support woff2 (all
 current ones) never fetch them. And one `_astro/logo-small.*.svg` is emitted because the SVG component
 import also registers the file as an asset; the marks are inlined, so no page references it.
+
+## History photographs
+
+The seven County GIS aerial photographs (1934 to 1989, 0.3 to 1.8 MB PNGs) live unchanged in
+`src/assets/history/` and go through `astro:assets` `<Image>` on the History page only: WebP at the default
+quality (80), `widths={[480, 800, 1200]}`, `sizes="(min-width: 64rem) 22rem, (min-width: 40rem) 50vw, 100vw"`,
+the first eager and the rest lazy. Source widths under 1200px are not upscaled (1969 emits one size).
+Every emitted file is under 300 KB (largest 207 KB), and the build output is byte-identical between runs.
+They cannot live in `public/`, where `<Image>` cannot optimize them.

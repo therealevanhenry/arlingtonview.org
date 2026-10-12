@@ -1,5 +1,8 @@
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import BoardTable from "../src/components/BoardTable.astro";
+import JoinAction from "../src/components/JoinAction.astro";
+import LinkGroups from "../src/components/LinkGroups.astro";
 import ArchiveTable from "../src/components/ArchiveTable.astro";
 import FileList from "../src/components/FileList.astro";
 import FolderFallback from "../src/components/FolderFallback.astro";
@@ -11,7 +14,7 @@ import type { Meeting } from "../src/lib/calendar";
 import { nextMeeting } from "../src/lib/calendar";
 import type { DriveFile } from "../src/lib/drive";
 import { withBase } from "../src/lib/paths";
-import { getSettings, type Settings } from "../src/lib/settings";
+import { getBoard, getResources, getSettings, type Board, type Settings } from "../src/lib/settings";
 import Documents from "../src/pages/documents.astro";
 import Home from "../src/pages/index.astro";
 import Meetings from "../src/pages/meetings.astro";
@@ -836,6 +839,131 @@ describe("documents page", () => {
     expect((html.match(/<h1/g) ?? []).length).toBe(1);
     expect(html).toContain("<title>Documents | ");
     expect(html).not.toContain("<script");
+    expect(html).not.toContain("target=");
+  });
+});
+
+/** Text content with every tag read as a word break, so adjacent cells do not run together. */
+const spaced = (html: string): string => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+describe("BoardTable", () => {
+  const board: Board = {
+    term: { start: "2026-09", end: "2028-08" },
+    officers: [
+      { role: "President Emeritus", name: "Ron Greene", kind: "honorary" },
+      { role: "ArNAC Representative", name: "Carter Echols", kind: "appointed" },
+      { role: "President", name: "Evan Henry", kind: "elected" },
+      { role: "Parliamentarian", name: "Vacant", kind: "elected" },
+    ],
+    blockCaptains: [
+      { block: 1, names: ["Carter Echols"] },
+      { block: 4, names: [] },
+      { block: 7, names: ["Linda Briggs", "Patricia Tillman-Talbert"] },
+    ],
+  };
+  const email = "president@example.test";
+  const render = (b: Board) => container.renderToString(BoardTable, { props: { board: b, contactEmail: email } });
+  const headings = (html: string, level: number): string[] =>
+    [...html.matchAll(new RegExp(`<h${level}[^>]*>([\\s\\S]*?)</h${level}>`, "g"))].map((m) => textOf(m[1]));
+
+  it("shows the term as September 2026 to August 2028", async () => {
+    expect(textOf(await render(board))).toContain("Term: September 2026 to August 2028");
+  });
+
+  it("has no term line without a term", async () => {
+    expect(await render({ ...board, term: undefined })).not.toContain("Term:");
+  });
+
+  it("groups officers as Elected officers, Appointed, Honorary, in that order", async () => {
+    const html = await render(board);
+    expect(headings(html, 3)).toEqual(["Elected officers", "Appointed", "Honorary"]);
+    expect(html.indexOf("Evan Henry")).toBeLessThan(html.indexOf("Carter Echols"));
+    expect(html.indexOf("Carter Echols")).toBeLessThan(html.indexOf("Ron Greene"));
+  });
+
+  it("omits a group with no members", async () => {
+    const html = await render({ ...board, officers: board.officers.filter((o) => o.kind !== "appointed") });
+    expect(headings(html, 3)).toEqual(["Elected officers", "Honorary"]);
+    expect(html).not.toContain("Appointed");
+  });
+
+  it("lists each role with its name, and marks a vacant office", async () => {
+    const html = await render(board);
+    expect(html).toMatch(/<dt[^>]*>\s*President\s*<\/dt>\s*<dd[^>]*>\s*Evan Henry\s*<\/dd>/);
+    expect(html).toMatch(/<dt[^>]*>\s*Parliamentarian\s*<\/dt>\s*<dd[^>]*>\s*<span class="soft">Vacant<\/span>/);
+  });
+
+  it("lists block captains, with Vacant for an empty block, and recruits when one is vacant", async () => {
+    const html = await render(board);
+    expect(headings(html, 2)).toContain("Block captains");
+    const text = spaced(html);
+    expect(text).toContain("Block 1 Carter Echols");
+    expect(text).toContain("Block 4 Vacant");
+    expect(text).toContain("Block 7 Linda Briggs, Patricia Tillman-Talbert");
+    expect(text).toContain("Some blocks need a captain. If you are interested in serving, contact the president at");
+    expect(html).toContain(`<a href="mailto:${email}">${email}</a>`);
+  });
+
+  it("drops the recruiting sentence when every block has a captain", async () => {
+    const html = await render({
+      ...board,
+      officers: board.officers.filter((o) => o.name !== "Vacant"),
+      blockCaptains: [{ block: 1, names: ["Carter Echols"] }],
+    });
+    expect(html).not.toContain("need a captain");
+    expect(html).not.toContain("mailto:");
+    expect(html).not.toContain("Vacant");
+  });
+
+  it("renders the committed roster exactly as given", async () => {
+    const real = await getBoard();
+    const html = await container.renderToString(BoardTable, { props: { board: real, contactEmail: settings.contactEmail } });
+    const text = spaced(html);
+    expect(headings(html, 3)).toEqual(["Elected officers", "Appointed", "Honorary"]);
+    for (const o of real.officers) expect(text).toContain(`${o.role} ${o.name}`);
+    expect(text).toContain("Block 7 Linda Briggs, Patricia Tillman-Talbert");
+    expect(text).toContain("need a captain");
+    expect(text).not.toContain("Term:");
+  });
+});
+
+describe("LinkGroups", () => {
+  it("renders one h2 per group, https links without target, and notes as plain text", async () => {
+    const groups = await getResources();
+    const html = await container.renderToString(LinkGroups, { props: { groups } });
+    expect([...html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map((m) => textOf(m[1]))).toEqual(groups.map((g) => g.title));
+    const links = hrefs(html);
+    expect(links).toHaveLength(groups.flatMap((g) => g.links).length);
+    for (const href of links) expect(href.startsWith("https://"), href).toBe(true);
+    expect(html).not.toContain("target=");
+    expect(html).not.toContain("tel:");
+    expect(html).not.toContain("<script");
+    const text = spaced(html);
+    expect(text).toContain("Police non-emergency 703-558-2222");
+    expect(text).toContain("Water and sewer emergency 703-228-6555");
+    expect(html).not.toMatch(/<a[^>]*>[^<]*703-/);
+  });
+});
+
+describe("JoinAction", () => {
+  const render = (joinFormUrl: string) =>
+    container.renderToString(JoinAction, { props: { contactEmail: "president@example.test", joinFormUrl } });
+
+  it("offers a button to email the president when there is no form", async () => {
+    const html = await render("");
+    expect(html).toMatch(/<a class="button" href="mailto:president@example\.test">Email the president<\/a>/);
+    expect(html).not.toContain("membership form");
+  });
+
+  it("treats a blank-looking form URL as no form", async () => {
+    expect(await render("  ")).toContain("Email the president");
+  });
+
+  it("offers the form as the button, and the email as a plain link, when a form exists", async () => {
+    const html = await render("https://forms.example.test/join");
+    expect(html).toMatch(/<a class="button" href="https:\/\/forms\.example\.test\/join">Open the membership form<\/a>/);
+    expect(html).toMatch(/<a href="mailto:president@example\.test">[^<]+<\/a>/);
+    expect(html).not.toContain('class="button" href="mailto:');
     expect(html).not.toContain("target=");
   });
 });

@@ -1,21 +1,20 @@
-# Roster supplied by the owner. Optional: term: { start: "YYYY-MM", end: "YYYY-MM" }
+# Board roster. kind: elected | appointed | honorary. Use name "Vacant" for an unfilled office and
+# names: [] for a block with no captain. Optional: term: { start: "YYYY-MM", end: "YYYY-MM" }
 officers:
-  - role: President
-    name: Evan Henry
-  - role: Vice President
-    name: Craig Syphax
-  - role: Secretary
-    name: Cameron Fletcher
-  - role: Treasurer
-    name: Linda Briggs
-  - role: Parliamentarian
-    name: Vacant
-  - role: Chaplain
-    name: Wilbur Briggs
-  - role: Public Relations Officer
-    name: Vacant
-  - role: Arlington Neighborhoods Advisory Committee (ArNAC) Representative
-    name: Carter Echols
-  - role: President Emeritus
-    name: Ron Greene
-blockCaptains: []
+  - { role: President, name: Evan Henry, kind: elected }
+  - { role: Vice President, name: Craig Syphax, kind: elected }
+  - { role: Secretary, name: Cameron Fletcher, kind: elected }
+  - { role: Treasurer, name: Linda Briggs, kind: elected }
+  - { role: Parliamentarian, name: Vacant, kind: elected }
+  - { role: Chaplain, name: Wilbur Briggs, kind: elected }
+  - { role: Public Relations Officer, name: Vacant, kind: elected }
+  - { role: Arlington Neighborhoods Advisory Committee (ArNAC) Representative, name: Carter Echols, kind: appointed }
+  - { role: President Emeritus, name: Ron Greene, kind: honorary }
+blockCaptains:
+  - { block: 1, names: [Carter Echols] }
+  - { block: 2, names: [Evan Henry] }
+  - { block: 3, names: [Cameron Fletcher] }
+  - { block: 4, names: [] }
+  - { block: 5, names: [] }
+  - { block: 6, names: [] }
+  - { block: 7, names: [Linda Briggs, Patricia Tillman-Talbert] }

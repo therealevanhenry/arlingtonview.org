@@ -44,9 +44,9 @@ describe("settingsSchema", () => {
 
 describe("board and resources strictness", () => {
   it("rejects unknown keys at every level", () => {
-    const board = { officers: [{ role: "r", name: "n" }], blockCaptains: [] };
+    const board = { officers: [{ role: "r", name: "n", kind: "elected" }], blockCaptains: [] };
     expect(() => boardSchema.parse({ ...board, officer: [] })).toThrow();
-    expect(() => boardSchema.parse({ ...board, officers: [{ role: "r", name: "n", phone: "1" }] })).toThrow();
+    expect(() => boardSchema.parse({ ...board, officers: [{ role: "r", name: "n", kind: "elected", phone: "1" }] })).toThrow();
     const res = { groups: [{ title: "g", links: [{ label: "l", url: "https://e.org/" }] }] };
     expect(() => resourcesSchema.parse(res)).not.toThrow();
     expect(() => resourcesSchema.parse({ ...res, group: [] })).toThrow();
@@ -56,7 +56,7 @@ describe("board and resources strictness", () => {
 
 describe("parseContent error messages", () => {
   it("names the file and the failing path for a schema error, on one line", () => {
-    const text = "officers:\n  - role: A\n    name: B\n  - role: C\n    name: D\n  - role: E\n    name: F\n  - role: G\n    name: H\n  - role: I\nblockCaptains: []\n";
+    const text = "officers:\n  - { role: A, name: B, kind: elected }\n  - { role: C, name: D, kind: elected }\n  - { role: E, name: F, kind: elected }\n  - { role: G, name: H, kind: elected }\n  - { role: I, kind: elected }\nblockCaptains: []\n";
     let message = "";
     try {
       parseContent("board.yaml", text, boardSchema);
@@ -113,10 +113,29 @@ describe("boardSchema", () => {
   it("accepts a roster with a valid term", () => {
     const board = boardSchema.parse({
       term: { start: "2026-09", end: "2027-08" },
-      officers: [{ role: "President", name: "A. Person" }],
+      officers: [{ role: "President", name: "A. Person", kind: "elected" }],
       blockCaptains: [{ block: 1, names: ["B. Person"] }],
     });
     expect(board.term?.end).toBe("2027-08");
+  });
+
+  it("requires a known kind on every officer", () => {
+    const officer = { role: "President", name: "A. Person" };
+    const parse = (o: object) => boardSchema.parse({ officers: [o], blockCaptains: [] });
+    expect(() => parse(officer)).toThrow();
+    expect(() => parse({ ...officer, kind: "volunteer" })).toThrow();
+    for (const kind of ["elected", "appointed", "honorary"]) expect(() => parse({ ...officer, kind }), kind).not.toThrow();
+  });
+
+  it("names the kind path when it is missing or unknown", () => {
+    const text = (kind: string) => `officers:\n  - { role: A, name: B${kind} }\nblockCaptains: []\n`;
+    expect(() => parseContent("board.yaml", text(""), boardSchema)).toThrow(/^src\/content\/board\.yaml: officers\[0\]\.kind: /);
+    expect(() => parseContent("board.yaml", text(", kind: other"), boardSchema)).toThrow(/^src\/content\/board\.yaml: officers\[0\]\.kind: /);
+  });
+
+  it("accepts a vacant block with no names", () => {
+    const board = boardSchema.parse({ officers: [], blockCaptains: [{ block: 4, names: [] }] });
+    expect(board.blockCaptains[0].names).toEqual([]);
   });
 
   it("rejects a term with a malformed month", () => {

@@ -1,0 +1,29 @@
+---
+import { getEntry, render } from "astro:content";
+import JoinAction from "../components/JoinAction.astro";
+import Base from "../layouts/Base.astro";
+import { lastUpdated, loadSiteData } from "../lib/data";
+
+const entry = await getEntry("pages", "join");
+if (entry === undefined) throw new Error("src/content/pages/join.md is missing");
+const { Content } = await render(entry);
+
+const data = await loadSiteData();
+const { contactEmail, joinFormUrl } = data.settings;
+---
+
+<Base
+  title="Join"
+  description="Who can join the Arlington View Civic Association and how to get in touch."
+  lastUpdated={lastUpdated(data)}
+>
+  <div class="sections">
+    <section class="stack">
+      <h1>Join</h1>
+      <div class="prose prose-lead">
+        <Content />
+      </div>
+      <JoinAction contactEmail={contactEmail} joinFormUrl={joinFormUrl} />
+    </section>
+  </div>
+</Base>
