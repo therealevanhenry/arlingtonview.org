@@ -244,3 +244,15 @@ export function groupByPath(files: DriveFile[], depth = 1): Array<{ label: strin
     .sort(([a], [b]) => rank(a) - rank(b) || compareText(b, a))
     .map(([label, group]) => ({ label, files: group.sort(newestFirst) }));
 }
+
+const GOOGLE_DOC = "application/vnd.google-apps.document";
+
+/** Drops a Google Doc when a PDF in the same folder has the same base name (the PDF's name minus `.pdf`). */
+export function preferPdfTwins(files: DriveFile[]): DriveFile[] {
+  const pdfBases = new Set(
+    files.filter((f) => f.mimeType === "application/pdf" || /\.pdf$/i.test(f.name)).map((f) => twinKey(f.path, f.name.replace(/\.pdf$/i, ""))),
+  );
+  return files.filter((f) => f.mimeType !== GOOGLE_DOC || !pdfBases.has(twinKey(f.path, f.name)));
+}
+
+const twinKey = (path: string[], base: string): string => `${JSON.stringify(path)}\u0000${base.toLowerCase()}`;

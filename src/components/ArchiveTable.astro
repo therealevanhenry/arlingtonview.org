@@ -1,0 +1,59 @@
+---
+import type { ArchiveRow } from "../lib/archive";
+import { formatArchiveDate } from "../lib/time";
+
+interface Props {
+  rows: ArchiveRow[];
+}
+
+const { rows } = Astro.props;
+---
+
+{
+  rows.length > 0 && (
+    <table class="table" role="table">
+      <thead role="rowgroup">
+        <tr role="row">
+          <th role="columnheader" scope="col">Date</th>
+          <th role="columnheader" scope="col">Agenda</th>
+          <th role="columnheader" scope="col">Minutes</th>
+          <th role="columnheader" scope="col">Materials</th>
+        </tr>
+      </thead>
+      <tbody role="rowgroup">
+        {rows.map((r) => (
+          <tr role="row">
+            <td role="cell" data-label="Date">
+              {formatArchiveDate(r.date, r.approximate)}
+              {r.approximate && " (month)"}
+            </td>
+            <td role="cell" data-label="Agenda">
+              {r.agenda ? <a href={r.agenda.url}>Agenda</a> : <span class="soft">Not posted</span>}
+            </td>
+            <td role="cell" data-label="Minutes">
+              {r.minutes ? (
+                <>
+                  <a href={r.minutes.url}>Minutes</a>
+                  {r.minutesDraft && " (draft)"}
+                </>
+              ) : (
+                <span class="soft">Not posted</span>
+              )}
+            </td>
+            <td role="cell" data-label="Materials" class={r.materials.length === 0 ? "cell-empty" : undefined}>
+              {r.materials.length > 0 && (
+                <ul class="files" role="list">
+                  {r.materials.map((m) => (
+                    <li class="file">
+                      <a href={m.url}>{m.name}</a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}

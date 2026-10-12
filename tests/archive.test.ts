@@ -7,6 +7,7 @@ import {
   groupByPath,
   groupByYear,
   pastRows,
+  preferPdfTwins,
   recentFiles,
   visibleFiles,
   type ArchiveRow,
@@ -431,5 +432,48 @@ describe("visibleFiles and grouping exclusions", () => {
     const keep = file("Cur", ["2026-2027"]);
     const groups = groupByPath([folder(), hidden(["2025-2026"]), keep, hidden()]);
     expect(groups).toEqual([{ label: "2026-2027", files: [keep] }]);
+  });
+});
+
+describe("preferPdfTwins", () => {
+  const DOC = "application/vnd.google-apps.document";
+  const PDF = "application/pdf";
+  const names = (files: DriveFile[]) => files.map((f) => f.name);
+
+  it("drops the Google Doc when a PDF in the same folder shares its base name", () => {
+    const doc = file("AVCA By-Laws (June 24th, 2026)", [], { mimeType: DOC });
+    const pdf = file("AVCA By-Laws (June 24th, 2026).pdf", [], { mimeType: PDF });
+    expect(names(preferPdfTwins([doc, pdf]))).toEqual(["AVCA By-Laws (June 24th, 2026).pdf"]);
+  });
+
+  it("compares base names case-insensitively", () => {
+    const doc = file("avca bylaws", [], { mimeType: DOC });
+    const pdf = file("AVCA Bylaws.PDF", [], { mimeType: PDF });
+    expect(names(preferPdfTwins([doc, pdf]))).toEqual(["AVCA Bylaws.PDF"]);
+  });
+
+  it("keeps a Google Doc whose twin sits in a different folder", () => {
+    const doc = file("Amendment", ["Proposed Amendments"], { mimeType: DOC });
+    const pdf = file("Amendment.pdf", ["Old Bylaws"], { mimeType: PDF });
+    expect(preferPdfTwins([doc, pdf])).toHaveLength(2);
+  });
+
+  it("keeps a Google Doc with no PDF twin, and a PDF with no Doc", () => {
+    const doc = file("Draft", [], { mimeType: DOC });
+    const pdf = file("Other.pdf", [], { mimeType: PDF });
+    expect(preferPdfTwins([doc, pdf])).toEqual([doc, pdf]);
+  });
+
+  it("only drops Google Docs, never another PDF or file type", () => {
+    const a = file("Same", [], { mimeType: "text/plain" });
+    const b = file("Same.pdf", [], { mimeType: PDF });
+    expect(preferPdfTwins([a, b])).toHaveLength(2);
+  });
+
+  it("keeps the order of the remaining files", () => {
+    const z = file("Z.pdf", [], { mimeType: PDF });
+    const zdoc = file("Z", [], { mimeType: DOC });
+    const a = file("A", [], { mimeType: DOC });
+    expect(names(preferPdfTwins([z, zdoc, a]))).toEqual(["Z.pdf", "A"]);
   });
 });

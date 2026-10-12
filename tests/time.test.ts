@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatArchiveDate,
   formatCalendarDate,
   formatMeetingDate,
   formatMeetingMonthDay,
@@ -106,5 +107,12 @@ describe("formatMeetingWeekday and formatMeetingMonthDay", () => {
     expect(formatMeetingDate(start)).toBe(`${formatMeetingWeekday(start)}, ${formatMeetingMonthDay(start)}, 2026`);
     // 04:59:59 UTC on January 1, 2027 is still New Year's Eve in Arlington.
     expect(formatMeetingDate(new Date("2027-01-01T04:59:59Z"))).toBe("Thursday, December 31, 2026");
+  });
+});
+
+describe("formatArchiveDate", () => {
+  it("formats an exact date and a month-only date", () => {
+    expect(formatArchiveDate("2026-06-24")).toBe("June 24, 2026");
+    expect(formatArchiveDate("2023-04-01", true)).toBe("April 2023");
   });
 });

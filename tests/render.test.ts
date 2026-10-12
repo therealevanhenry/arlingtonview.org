@@ -1,5 +1,8 @@
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import ArchiveTable from "../src/components/ArchiveTable.astro";
+import FileList from "../src/components/FileList.astro";
+import FolderFallback from "../src/components/FolderFallback.astro";
 import MeetingList from "../src/components/MeetingList.astro";
 import NextMeeting from "../src/components/NextMeeting.astro";
 import QuickLinks from "../src/components/QuickLinks.astro";
@@ -9,25 +12,45 @@ import { nextMeeting } from "../src/lib/calendar";
 import type { DriveFile } from "../src/lib/drive";
 import { withBase } from "../src/lib/paths";
 import { getSettings, type Settings } from "../src/lib/settings";
+import Documents from "../src/pages/documents.astro";
 import Home from "../src/pages/index.astro";
+import Meetings from "../src/pages/meetings.astro";
+import type { ArchiveRow } from "../src/lib/archive";
+import { parseMeetingDate } from "../src/lib/meetingDate";
+import type { FolderResult } from "../src/lib/drive";
 
 // The home page reads everything through `loadSiteData`. Swap in a fixed calendar (set per test through
 // `home.meetings`) and unreachable Drive folders, so the page renders without the network or the clock.
-const home = vi.hoisted(() => ({ meetings: [] as Meeting[] }));
+const home = vi.hoisted(() => ({
+  meetings: [] as Meeting[],
+  calendarOk: true,
+  folders: undefined as Record<string, FolderResult> | undefined,
+  buildRows: false,
+}));
 
 vi.mock("../src/lib/data", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/data")>();
   const { getSettings: readSettings } = await import("../src/lib/settings");
+  const { buildArchive: build } = await import("../src/lib/archive");
   const down = { ok: false as const, folderUrl: "https://example.test/f", reason: "test" };
   return {
     ...actual,
-    loadSiteData: async (): Promise<import("../src/lib/data").SiteData> => ({
-      settings: await readSettings(),
-      now: new Date("2026-09-01T12:00:00Z"),
-      calendar: { ok: true, meetings: home.meetings },
-      folders: { bylaws: down, meetings: down, presentations: down, letters: down, neighborhoodPlan: down },
-      rows: [],
-    }),
+    loadSiteData: async (): Promise<import("../src/lib/data").SiteData> => {
+      const folders = (home.folders ?? {
+        bylaws: down,
+        meetings: down,
+        presentations: down,
+        letters: down,
+        neighborhoodPlan: down,
+      }) as import("../src/lib/data").SiteData["folders"];
+      return {
+        settings: await readSettings(),
+        now: new Date("2026-09-01T12:00:00Z"),
+        calendar: home.calendarOk ? { ok: true, meetings: home.meetings } : { ok: false, reason: "test" },
+        folders,
+        rows: home.buildRows ? build(home.meetings, folders) : [],
+      };
+    },
   };
 });
 
@@ -352,6 +375,364 @@ describe("RecentFiles", () => {
     expect(html).toContain("Minutes 2026-09-29.pdf");
     expect(html).toContain("October 6, 2026");
     expect(html).toContain('href="https://drive.google.com/file/d/1/view"');
+    expect(html).not.toContain("target=");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Meetings and Documents. Fixture files are shaped like the owner's real Drive folders.
+
+const FOLDER_URL = (id: string): string => `https://drive.google.com/drive/folders/${id}`;
+const DOC = "application/vnd.google-apps.document";
+const PDF = "application/pdf";
+let fileCounter = 0;
+function driveFile(name: string, path: string[] = [], extra: Partial<DriveFile> = {}): DriveFile {
+  const id = `f${String(++fileCounter).padStart(3, "0")}`;
+  const parsed = parseMeetingDate(name);
+  return {
+    id,
+    name,
+    mimeType: DOC,
+    modifiedTime: "2026-08-15T12:00:00.000Z",
+    url: `https://drive.google.com/file/d/${id}/view`,
+    isFolder: false,
+    path,
+    ...(parsed ? { meetingDate: parsed.date, approximate: parsed.approximate } : {}),
+    ...extra,
+  };
+}
+const okResult = (id: string, files: DriveFile[]): FolderResult => ({ ok: true, files, folderUrl: FOLDER_URL(id) });
+const downResult = (id: string): FolderResult => ({ ok: false, folderUrl: FOLDER_URL(id), reason: "HTTP 403" });
+const folderEntry = (name: string, path: string[] = []): DriveFile =>
+  driveFile(name, path, { isFolder: true, mimeType: "application/vnd.google-apps.folder" });
+const countOf = (html: string, needle: string): number => html.split(needle).length - 1;
+
+describe("FolderFallback", () => {
+  it("says the list is unavailable and links the folder", async () => {
+    const html = await container.renderToString(FolderFallback, { props: { folderUrl: FOLDER_URL("X") } });
+    expect(textOf(html)).toContain("The file list is not available right now.");
+    expect(html).toContain(`<a href="${FOLDER_URL("X")}">Open folder in Google Drive</a>`);
+  });
+});
+
+describe("FileList", () => {
+  it("renders fallback with folder link on ok:false", async () => {
+    const result: FolderResult = { ok: false, folderUrl: "https://drive.google.com/drive/folders/X", reason: "403" };
+    const html = await container.renderToString(FileList, { props: { result, title: "Minutes", id: "minutes" } });
+    expect(html).toContain("Open folder in Google Drive");
+    expect(html).toContain("folders/X");
+    expect(countOf(html, "folders/X")).toBe(1);
+    expect(html).toContain('<section id="minutes"');
+    expect(html).toMatch(/<h2[^>]*>Minutes<\/h2>/);
+  });
+
+  it("keeps the slot, then the fallback, when ok:false", async () => {
+    const result = downResult("B");
+    const html = await container.renderToString(FileList, {
+      props: { result, title: "Bylaws", id: "bylaws" },
+      slots: { default: '<p id="slotted">Current bylaws</p>' },
+    });
+    expect(html.indexOf("Bylaws</h2>")).toBeLessThan(html.indexOf("slotted"));
+    expect(html.indexOf("slotted")).toBeLessThan(html.indexOf("not available"));
+    expect(countOf(html, "Open folder in Google Drive")).toBe(1);
+  });
+
+  it("lists file names as links, hides folders and (OLD) files, and ends with the folder link once", async () => {
+    const result = okResult("M", [
+      folderEntry("2026-2027"),
+      driveFile("AVCA Monthly Meeting Proposed Agenda - October 20, 2026", ["2026-2027", "26 10 October"]),
+      driveFile("(OLD) AVCA 2025 Feb mtg mins", ["2024-2025"]),
+      driveFile("Motion of Neutrality on S Pierce Street", ["2024-2025"]),
+    ]);
+    const html = await container.renderToString(FileList, { props: { result, title: "Minutes and agendas", id: "minutes", group: "path" } });
+    expect(html).toContain("AVCA Monthly Meeting Proposed Agenda - October 20, 2026</a>");
+    expect(html).toContain("Motion of Neutrality on S Pierce Street</a>");
+    expect(html).not.toContain("(OLD)");
+    expect(html).not.toMatch(/>2026-2027<\/a>/);
+    expect(countOf(html, "Open folder in Google Drive")).toBe(1);
+    expect(html.lastIndexOf("Open folder in Google Drive")).toBeGreaterThan(html.lastIndexOf("</ul>"));
+  });
+
+  it("orders path groups newest first, with sub-headings one level under the title", async () => {
+    const result = okResult("M", [
+      driveFile("AVCA 2025 Jun mtg mins", ["2025-2026"]),
+      driveFile("AVCA 2026 Sep mtg mins (draft)", ["2026-2027"]),
+    ]);
+    const html = await container.renderToString(FileList, { props: { result, title: "Minutes and agendas", id: "minutes", group: "path" } });
+    expect(html).toMatch(/<h3[^>]*>2026-2027<\/h3>/);
+    expect(html.indexOf("2026-2027")).toBeLessThan(html.indexOf("2025-2026"));
+  });
+
+  it("puts top-level files first under no sub-heading in a path group", async () => {
+    const result = okResult("B", [
+      driveFile("Old thing", ["Old Bylaws"]),
+      driveFile("Top level.pdf", [], { mimeType: PDF }),
+    ]);
+    const html = await container.renderToString(FileList, { props: { result, title: "Bylaws", id: "bylaws", group: "path" } });
+    expect(html.indexOf("Top level.pdf")).toBeLessThan(html.indexOf("Old Bylaws"));
+    expect(html.indexOf("Top level.pdf")).toBeLessThan(html.indexOf("<h3"));
+  });
+
+  it("groups by year with the year as sub-heading, Undated last", async () => {
+    const result = okResult("P", [
+      driveFile("Deck 2025-03-04", [], {}),
+      driveFile("Untitled deck"),
+      driveFile("Deck 2026-06-24"),
+    ]);
+    const html = await container.renderToString(FileList, { props: { result, title: "Presentations", id: "presentations", group: "year" } });
+    const order = ["2026", "2025", "Undated"].map((y) => html.search(new RegExp(`<h3[^>]*>${y}</h3>`)));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("supports a level 3 title", async () => {
+    const html = await container.renderToString(FileList, { props: { result: okResult("P", []), title: "T", id: "t", level: 3 } });
+    expect(html).toMatch(/<h3[^>]*>T<\/h3>/);
+    expect(html).not.toContain("<h2");
+  });
+
+  it("shows the parsed meeting date, month only when approximate, else the modified date", async () => {
+    const result = okResult("N", [
+      driveFile("AVCA Proposed Agenda 06.24.2026"),
+      driveFile("AVCA 2025 Jun mtg mins"),
+      driveFile("Plan summary"),
+    ]);
+    const html = await container.renderToString(FileList, { props: { result, title: "Plan", id: "plan" } });
+    expect(html).toContain("June 24, 2026");
+    expect(html).toContain("June 2025");
+    expect(html).not.toContain("June 1, 2025");
+    expect(html).toContain("August 15, 2026");
+  });
+
+  it("shows Nothing posted yet. and the folder link for an empty ok result", async () => {
+    const html = await container.renderToString(FileList, { props: { result: okResult("E", [folderEntry("Sub")]), title: "Letters", id: "letters" } });
+    expect(html).toContain("Nothing posted yet.");
+    expect(countOf(html, "Open folder in Google Drive")).toBe(1);
+    expect(html).toContain(FOLDER_URL("E"));
+    expect(html).not.toContain(">Sub<");
+  });
+});
+
+describe("ArchiveTable", () => {
+  const base: ArchiveRow = { date: "2026-06-24", approximate: false, minutesDraft: false, materials: [] };
+  const agenda = driveFile("AVCA Proposed Agenda 06.24.2026");
+  const minutes = driveFile("AVCA 2026 June mtg mins");
+  const render = (rows: ArchiveRow[]) => container.renderToString(ArchiveTable, { props: { rows } });
+
+  it("renders nothing for no rows", async () => {
+    expect((await render([])).trim()).toBe("");
+  });
+
+  it("has the four columns, long dates, and links for agenda and minutes", async () => {
+    const html = await render([{ ...base, agenda, minutes }]);
+    for (const col of ["Date", "Agenda", "Minutes", "Materials"]) expect(html).toMatch(new RegExp(`<th[^>]*>${col}</th>`));
+    expect(html).toContain("June 24, 2026");
+    expect(html).toContain(`<a href="${agenda.url}">Agenda</a>`);
+    expect(html).toContain(`<a href="${minutes.url}">Minutes</a>`);
+    expect(html).not.toContain("(draft)");
+    expect(html).not.toContain("Not posted");
+  });
+
+  it("marks draft minutes", async () => {
+    const html = await render([{ ...base, minutes, minutesDraft: true }]);
+    expect(textOf(html)).toContain("Minutes (draft)");
+  });
+
+  it("says Not posted when agenda or minutes are missing", async () => {
+    const html = await render([base]);
+    expect(countOf(html, "Not posted")).toBe(2);
+  });
+
+  it("shows month and year with a (month) marker for approximate dates", async () => {
+    const html = await render([{ ...base, date: "2023-04-01", approximate: true }]);
+    expect(textOf(html)).toContain("April 2023 (month)");
+    expect(html).not.toContain("April 1, 2023");
+  });
+
+  it("does not mark exact dates", async () => {
+    expect(await render([base])).not.toContain("(month)");
+  });
+
+  it("lists materials as links and leaves an empty cell otherwise", async () => {
+    const m = driveFile("Motion of Neutrality on S Pierce Street");
+    const html = await render([{ ...base, materials: [m] }, { ...base, date: "2026-05-26" }]);
+    expect(html).toContain(`<a href="${m.url}">Motion of Neutrality on S Pierce Street</a>`);
+    expect(countOf(html, "cell-empty")).toBe(1);
+  });
+
+  it("labels every td and carries table roles", async () => {
+    const html = await render([{ ...base, agenda }, { ...base, date: "2026-05-26" }]);
+    const tds = [...html.matchAll(/<td\b[^>]*>/g)].map((m) => m[0]);
+    expect(tds).toHaveLength(8);
+    for (const td of tds) {
+      expect(td).toContain("data-label=");
+      expect(td).toContain('role="cell"');
+    }
+    expect(html).toContain('role="table"');
+    expect(html).toContain('role="rowgroup"');
+    expect(html).toContain('role="row"');
+    expect(html).toContain('role="columnheader"');
+  });
+});
+
+describe("meetings page", () => {
+  const upcomingOne: Meeting = { ...sample, start: new Date("2026-09-29T23:00:00Z"), end: new Date("2026-09-30T00:30:00Z") };
+  const render = (meetings: Meeting[], opts: { folders?: Record<string, FolderResult>; calendarOk?: boolean } = {}): Promise<string> => {
+    home.meetings = meetings;
+    home.calendarOk = opts.calendarOk ?? true;
+    home.folders = opts.folders;
+    home.buildRows = opts.folders !== undefined;
+    return container.renderToString(Meetings, { request: new Request("https://arlingtonview.org/meetings/") });
+  };
+  const main = (html: string): string => html.slice(html.indexOf("<main"), html.indexOf("</main>"));
+
+  it("renders the rule, the note, upcoming meetings, subscribe links, and the past section with every folder down", async () => {
+    const html = main(await render([upcomingOne]));
+    expect(html).toContain(settings.meetingRule);
+    expect(html).toContain(settings.virtualLinkNote);
+    expect(html).toContain(`href="mailto:${settings.contactEmail}"`);
+    expect(html).toMatch(/<h2[^>]*>Upcoming meetings<\/h2>/);
+    expect(html).toContain("September 29, 2026");
+    expect(html).toContain("Subscribe to calendar");
+    expect(html).toContain("Calendar file (ICS)");
+    expect(html).toMatch(/<h2 id="past"[^>]*>Past meetings<\/h2>/);
+    expect(html).toContain("The file list is not available right now.");
+    expect(html).toContain("Open folder in Google Drive");
+    expect(html).toContain("https://example.test/f");
+    expect(html).not.toContain("meet.google.com");
+    expect(html).not.toContain("<table");
+  });
+
+  it("keeps one h1, no script, no new-tab links", async () => {
+    const html = await render([upcomingOne]);
+    expect((html.match(/<h1/g) ?? []).length).toBe(1);
+    expect(html).toContain("<title>Meetings | ");
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("target=");
+  });
+
+  it("says dates are unavailable, with subscribe links, when the calendar is down", async () => {
+    const html = main(await render([], { calendarOk: false }));
+    expect(textOf(html)).toContain("Upcoming meeting dates are not available right now");
+    expect(html).toContain("Subscribe to calendar");
+    expect(html).not.toContain("<time");
+  });
+
+  it("says the same when the calendar is fine but has nothing ahead", async () => {
+    const html = main(await render([]));
+    expect(textOf(html)).toContain("Upcoming meeting dates are not available right now");
+    expect(html).toContain("Calendar file (ICS)");
+  });
+
+  it("builds the past table from the archive and links the meetings folder once it loads", async () => {
+    const past: Meeting = { ...sample, uid: "past", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z"), agendaUrl: undefined };
+    const folders = {
+      bylaws: downResult("b"),
+      meetings: okResult("19POeuA29OJnWSE4oLLrT3bXyaVsmB298", [
+        driveFile("AVCA Proposed Agenda 06.24.2026", ["2026-2027", "26 06 June"]),
+        driveFile("(OLD) AVCA 2025 Feb mtg mins", ["2024-2025", "25 02 February"]),
+      ]),
+      presentations: okResult("p", []),
+      letters: downResult("l"),
+      neighborhoodPlan: downResult("n"),
+    };
+    const html = main(await render([past, upcomingOne], { folders }));
+    expect(html).toContain('role="table"');
+    expect(html).toContain("June 24, 2026");
+    expect(html).toContain(">Agenda</a>");
+    expect(html).not.toContain("(OLD)");
+    expect(html).not.toContain("September 29, 2026</td>");
+    expect(html).toContain(`<a href="${FOLDER_URL("19POeuA29OJnWSE4oLLrT3bXyaVsmB298")}">Open folder in Google Drive</a>`);
+    expect(html).not.toContain("The file list is not available");
+  });
+
+  it("prints nothing from a past meeting beyond date, time, place, and the agenda link", async () => {
+    const past: Meeting = { ...sample, uid: "past2", title: "SECRET TITLE", description: "SECRET DESCRIPTION", start: new Date("2026-06-24T23:00:00Z"), end: new Date("2026-06-25T00:30:00Z") } as Meeting;
+    const folders = { bylaws: downResult("b"), meetings: okResult("m", []), presentations: okResult("p", []), letters: downResult("l"), neighborhoodPlan: downResult("n") };
+    const html = await render([past], { folders });
+    expect(html).not.toContain("SECRET");
+  });
+});
+
+describe("documents page", () => {
+  const render = (folders?: Record<string, FolderResult>): Promise<string> => {
+    home.meetings = [];
+    home.calendarOk = true;
+    home.folders = folders;
+    home.buildRows = false;
+    return container.renderToString(Documents, { request: new Request("https://arlingtonview.org/documents/") });
+  };
+  const main = (html: string): string => html.slice(html.indexOf("<main"), html.indexOf("</main>"));
+  const ids = ["bylaws", "minutes", "presentations", "letters", "neighborhood-plan"];
+  const headings = ["Bylaws", "Minutes and agendas", "Presentations", "Official letters", "Neighborhood Plan"];
+
+  it("renders all five sections in order, each with the fallback, when every folder is down", async () => {
+    const html = main(await render());
+    for (const id of ids) expect(html).toContain(`<section id="${id}"`);
+    const at = headings.map((h) => html.search(new RegExp(`<h2[^>]*>${h}</h2>`)));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect(at).toEqual([...at].sort((a, b) => a - b));
+    expect(countOf(html, "Open folder in Google Drive")).toBe(5);
+    expect(countOf(html, "The file list is not available right now.")).toBe(5);
+    expect(html).not.toMatch(/survey/i);
+    expect(html).not.toContain("<table");
+  });
+
+  it("links the current bylaws PDF from settings even when the folder is down, and lists in-page links", async () => {
+    const html = main(await render());
+    expect(html).toContain(
+      `<a href="https://drive.google.com/file/d/${settings.drive.bylawsCurrentFileId}/view">Current bylaws (PDF)</a>`,
+    );
+    for (const id of ids) expect(html).toContain(`href="#${id}"`);
+    expect(html.indexOf('href="#bylaws"')).toBeLessThan(html.indexOf('<section id="bylaws"'));
+  });
+
+  it("renders folders shaped like the owner's Drive", async () => {
+    const current = driveFile(`AVCA By-Laws (June 24th, 2026).pdf`, [], { id: settings.drive.bylawsCurrentFileId, mimeType: PDF });
+    const folders = {
+      bylaws: okResult("b", [
+        current,
+        driveFile("AVCA By-Laws (June 24th, 2026)", []),
+        folderEntry("Old Bylaws"),
+        driveFile("Bylaws 2019", ["Old Bylaws"]),
+        driveFile("Bylaws 2019.pdf", ["Old Bylaws"], { mimeType: PDF }),
+        driveFile("Proposed Amendment 2026", ["Proposed Amendments"]),
+      ]),
+      meetings: okResult("m", [
+        folderEntry("2026-2027"),
+        driveFile("AVCA Monthly Meeting Proposed Agenda - October 20, 2026", ["2026-2027", "26 10 October"]),
+        driveFile("AVCA 2026 Sep mtg mins (draft)", ["2026-2027", "26 10 October"]),
+        driveFile("AVCA 2025 Jun mtg mins", ["2025-2026", "25 07 July"]),
+        driveFile("(OLD) AVCA 2025 Feb mtg mins", ["2024-2025", "25 03 March"]),
+      ]),
+      presentations: okResult("p", [driveFile("Zoning deck 2026-03-03", [])]),
+      letters: okResult("l", [driveFile("2025-03-03 Statement of Neutrality S Pierce Street Discussions.pdf", ["2024 - 2025"], { mimeType: PDF })]),
+      neighborhoodPlan: okResult("n", [driveFile("Neighborhood Conservation Plan.pdf", [], { mimeType: PDF })]),
+    };
+    const html = main(await render(folders));
+    expect(countOf(html, "Current bylaws (PDF)")).toBe(1);
+    // The current PDF is linked once, above; it is not repeated in the list.
+    expect(countOf(html, "AVCA By-Laws (June 24th, 2026)")).toBe(0);
+    expect(countOf(html, ">Bylaws 2019")).toBe(1);
+    expect(html).toContain("Bylaws 2019.pdf</a>");
+    expect(html).toMatch(/<h3[^>]*>Proposed Amendments<\/h3>/);
+    expect(html.indexOf("Proposed Amendments")).toBeLessThan(html.indexOf("Old Bylaws</h3>"));
+    expect(html.indexOf("2026-2027</h3>")).toBeLessThan(html.indexOf("2025-2026</h3>"));
+    expect(html).toContain("AVCA 2026 Sep mtg mins (draft)</a>");
+    expect(html).not.toContain("(OLD)");
+    expect(html).toContain("Zoning deck 2026-03-03</a>");
+    expect(html).toContain("Statement of Neutrality S Pierce Street Discussions.pdf</a>");
+    expect(html).toContain("Neighborhood Conservation Plan.pdf</a>");
+    expect(countOf(html, "Open folder in Google Drive")).toBe(5);
+    expect(countOf(html, "not available right now")).toBe(0);
+    expect(html).not.toMatch(/survey/i);
+  });
+
+  it("keeps one h1, no script, no new-tab links, and the Documents title", async () => {
+    const html = await render();
+    expect((html.match(/<h1/g) ?? []).length).toBe(1);
+    expect(html).toContain("<title>Documents | ");
+    expect(html).not.toContain("<script");
     expect(html).not.toContain("target=");
   });
 });

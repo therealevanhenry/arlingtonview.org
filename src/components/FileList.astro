@@ -1,0 +1,69 @@
+---
+import { groupByPath, groupByYear, visibleFiles } from "../lib/archive";
+import type { DriveFile, FolderResult } from "../lib/drive";
+import { formatArchiveDate, formatCalendarDate } from "../lib/time";
+import FolderFallback from "./FolderFallback.astro";
+
+interface Props {
+  result: FolderResult;
+  title: string;
+  id: string;
+  group?: "none" | "year" | "path";
+  /** Heading level of the title; sub-headings are one level lower. */
+  level?: 2 | 3;
+}
+
+const { result, title, id, group = "none", level = 2 } = Astro.props;
+const Heading = `h${level}` as "h2" | "h3";
+const SubHeading = `h${level + 1}` as "h3" | "h4";
+
+type Section = { label: string; files: DriveFile[] };
+const sections: Section[] = !result.ok
+  ? []
+  : group === "year"
+    ? groupByYear(result.files).map((g) => ({ label: g.year, files: g.files }))
+    : group === "path"
+      ? groupByPath(result.files)
+      : [{ label: "", files: visibleFiles(result.files) }];
+const nonEmpty = sections.filter((s) => s.files.length > 0);
+
+const dateOf = (f: DriveFile): { text: string; iso: string } =>
+  f.meetingDate !== undefined
+    ? { text: formatArchiveDate(f.meetingDate, f.approximate === true), iso: f.meetingDate }
+    : { text: formatCalendarDate(new Date(f.modifiedTime)), iso: f.modifiedTime };
+---
+
+<section id={id} class="stack" aria-labelledby={`${id}-title`}>
+  <Heading id={`${id}-title`}>{title}</Heading>
+  <slot />
+  {
+    !result.ok ? (
+      <FolderFallback folderUrl={result.folderUrl} />
+    ) : (
+      <>
+        {nonEmpty.length === 0 && <p>Nothing posted yet.</p>}
+        {nonEmpty.map((s) => (
+          <div class="stack">
+            {s.label !== "" && <SubHeading>{s.label}</SubHeading>}
+            <ul class="files" role="list">
+              {s.files.map((f) => {
+                const d = dateOf(f);
+                return (
+                  <li class="file">
+                    <a href={f.url}>{f.name}</a>
+                    <time class="file-date" datetime={d.iso}>
+                      {d.text}
+                    </time>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+        <p>
+          <a href={result.folderUrl}>Open folder in Google Drive</a>
+        </p>
+      </>
+    )
+  }
+</section>

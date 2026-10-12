@@ -222,6 +222,8 @@ by source order and nothing needs `!important`.
 | `.entries-four` | modifier on `.entries` for sets of exactly four: 1 column, 2 x 2 from 36rem, 4 across from 64rem (`min-width` queries). Columns are 249px wide at the 36rem switch and 216px at the 64rem switch (gutters and 2rem gap included), so none is under 12rem. Use it instead of auto-fit, which always has a width band that lands 3 + 1 |
 | `.table` | left-aligned table with 1px row rules and tabular figures. Under 40rem each row restacks as a block and each cell is labelled from `td[data-label]`, so every `td` needs a `data-label` |
 | `.files` / `.file` / `.file-date` | plain list: a link plus a secondary date |
+| `.soft` | text in `--ink-soft`; used for "Not posted" in the past-meetings table |
+| `.cell-empty` | on a `td` with nothing in it: `display: none` under 40rem only (the stacked layout would otherwise print a bare label); on wider screens the cell stays so the columns line up |
 | `.site-header`, `.brand`, `.site-nav` and friends | `src/components/Header.astro` |
 | `.site-footer` and friends | `src/components/Footer.astro` |
 | `.skip-link` | first focusable element on every page |

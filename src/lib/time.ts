@@ -63,3 +63,16 @@ export function formatMeetingRange(start: Date, end: Date): string {
 export function formatCalendarDate(d: Date): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, year: "numeric", month: "long", day: "numeric" }).format(d);
 }
+
+/** A parsed archive date: `June 24, 2026`, or `June 2026` when only the month is known. */
+export function formatArchiveDate(date: string, approximate = false): string {
+  const [y, m, d] = date.split("-").map(Number);
+  // Noon UTC is the same calendar day in New York all year.
+  const instant = new Date(Date.UTC(y, m - 1, d, 12));
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "long",
+    ...(approximate ? {} : { day: "numeric" as const }),
+  }).format(instant);
+}

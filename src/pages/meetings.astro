@@ -1,0 +1,63 @@
+---
+import ArchiveTable from "../components/ArchiveTable.astro";
+import FolderFallback from "../components/FolderFallback.astro";
+import MeetingList from "../components/MeetingList.astro";
+import Base from "../layouts/Base.astro";
+import { pastRows } from "../lib/archive";
+import { subscribeLinks, upcoming } from "../lib/calendar";
+import { lastUpdated, loadSiteData } from "../lib/data";
+
+const data = await loadSiteData();
+const { settings, now, calendar, rows, folders } = data;
+const coming = calendar.ok ? upcoming(calendar.meetings, now, 6) : [];
+const calendarId = settings.calendarId.trim();
+const subscribe = calendarId === "" ? undefined : subscribeLinks(calendarId);
+const past = pastRows(rows, now);
+---
+
+<Base
+  title="Meetings"
+  description="When and where the Arlington View Civic Association meets, plus agendas and minutes from past meetings."
+  lastUpdated={lastUpdated(data)}
+>
+  <div class="sections">
+    <section class="stack">
+      <h1>Meetings</h1>
+      <p class="measure">{settings.meetingRule}</p>
+      <p class="measure">
+        {settings.virtualLinkNote} <a href={`mailto:${settings.contactEmail}`}>{settings.contactEmail}</a>
+      </p>
+    </section>
+    <section class="stack" aria-labelledby="upcoming">
+      <h2 id="upcoming">Upcoming meetings</h2>
+      {
+        coming.length > 0 ? (
+          <MeetingList meetings={coming} rows={rows} />
+        ) : (
+          <p class="measure">Upcoming meeting dates are not available right now. Check the calendar for the next meeting.</p>
+        )
+      }
+      {
+        subscribe !== undefined && (
+          <div class="actions">
+            <a href={subscribe.google}>Subscribe to calendar</a>
+            <a href={subscribe.ics}>Calendar file (ICS)</a>
+          </div>
+        )
+      }
+    </section>
+    <section class="stack" aria-labelledby="past">
+      <h2 id="past">Past meetings</h2>
+      <ArchiveTable rows={past} />
+      {
+        folders.meetings.ok ? (
+          <p>
+            <a href={folders.meetings.folderUrl}>Open folder in Google Drive</a>
+          </p>
+        ) : (
+          <FolderFallback folderUrl={folders.meetings.folderUrl} />
+        )
+      }
+    </section>
+  </div>
+</Base>

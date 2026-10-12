@@ -1,0 +1,47 @@
+---
+import FileList from "../components/FileList.astro";
+import Base from "../layouts/Base.astro";
+import { preferPdfTwins } from "../lib/archive";
+import { lastUpdated, loadSiteData } from "../lib/data";
+import type { FolderResult } from "../lib/drive";
+
+const data = await loadSiteData();
+const { settings, folders } = data;
+
+const currentId = settings.drive.bylawsCurrentFileId.trim();
+const currentBylawsUrl = currentId === "" ? undefined : `https://drive.google.com/file/d/${currentId}/view`;
+// The current PDF is linked above the list, so it is not repeated in it; Doc/PDF twins collapse to the PDF.
+const bylaws: FolderResult = folders.bylaws.ok
+  ? { ...folders.bylaws, files: preferPdfTwins(folders.bylaws.files).filter((f) => f.id !== currentId) }
+  : folders.bylaws;
+
+const sections = [
+  { id: "bylaws", title: "Bylaws" },
+  { id: "minutes", title: "Minutes and agendas" },
+  { id: "presentations", title: "Presentations" },
+  { id: "letters", title: "Official letters" },
+  { id: "neighborhood-plan", title: "Neighborhood Plan" },
+];
+---
+
+<Base
+  title="Documents"
+  description="Bylaws, meeting minutes and agendas, presentations, official letters, and the Neighborhood Plan."
+  lastUpdated={lastUpdated(data)}
+>
+  <div class="sections">
+    <section class="stack">
+      <h1>Documents</h1>
+      <ul class="files" role="list">
+        {sections.map((s) => <li class="file"><a href={`#${s.id}`}>{s.title}</a></li>)}
+      </ul>
+    </section>
+    <FileList result={bylaws} title="Bylaws" id="bylaws" group="path">
+      {currentBylawsUrl !== undefined && <p><a href={currentBylawsUrl}>Current bylaws (PDF)</a></p>}
+    </FileList>
+    <FileList result={folders.meetings} title="Minutes and agendas" id="minutes" group="path" />
+    <FileList result={folders.presentations} title="Presentations" id="presentations" group="year" />
+    <FileList result={folders.letters} title="Official letters" id="letters" group="path" />
+    <FileList result={folders.neighborhoodPlan} title="Neighborhood Plan" id="neighborhood-plan" />
+  </div>
+</Base>

@@ -544,6 +544,11 @@ a:hover {
 
 /* ---------- Tables ---------- */
 
+/* Secondary text in the soft ink, e.g. "Not posted" in a table cell. */
+.soft {
+  color: var(--ink-soft);
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -585,6 +590,11 @@ a:hover {
   .table :where(th, td) {
     padding: var(--space-1) 0;
     border: 0;
+  }
+
+  /* An empty cell would print a bare label; hide it in the stacked layout only. */
+  .cell-empty {
+    display: none;
   }
 
   .table :where(td[data-label])::before {

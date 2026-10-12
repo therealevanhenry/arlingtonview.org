@@ -1,0 +1,13 @@
+---
+interface Props {
+  folderUrl: string;
+  /** Link text; defaults to the one wording used site-wide. */
+  label?: string;
+}
+
+const { folderUrl, label = "Open folder in Google Drive" } = Astro.props;
+---
+
+<p>
+  The file list is not available right now. <a href={folderUrl}>{label}</a>
+</p>
