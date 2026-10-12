@@ -251,6 +251,20 @@ describe("scenario C: month-rule edges", () => {
     expect(pastRows(rows, new Date(m.end.getTime() - 60_000))).toEqual([]);
     expect(pastRows(rows, new Date(m.end.getTime() + 60_000))).toEqual(rows);
   });
+
+  it("C9: a meeting whose end equals now counts as ended", () => {
+    const m = meeting("2026-10-20");
+    const rows = buildArchive([m], { meetings: none, presentations: none });
+    expect(pastRows(rows, new Date(m.end.getTime()))).toEqual(rows);
+  });
+
+  it("C10: a file-only row dated today is past", () => {
+    const f = file("AVCA Proposed Agenda 2026-10-20", OCT);
+    const rows = buildArchive([], { meetings: ok([f]), presentations: none });
+    expect(dates(rows)).toEqual(["2026-10-20"]);
+    expect(rows[0].meeting).toBeUndefined();
+    expect(pastRows(rows, new Date("2026-10-20T12:00:00-04:00"))).toEqual(rows);
+  });
 });
 
 describe("row dates", () => {
@@ -385,6 +399,15 @@ describe("recentFiles", () => {
     const result = recentFiles([ok([folder, hidden, a]), failed, ok([b, c])], 2);
     expect(result).toEqual([b, c]);
     expect(result.some((f) => f.isFolder)).toBe(false);
+  });
+
+  it("sorts files with an unparseable modifiedTime last, whatever the input order", () => {
+    const bad = file("bad", [], { modifiedTime: "" });
+    const a = file("a", [], { modifiedTime: "2026-03-01T00:00:00.000Z" });
+    const b = file("b", [], { modifiedTime: "2026-05-01T00:00:00.000Z" });
+    expect(recentFiles([ok([bad, a, b])], 3)).toEqual([b, a, bad]);
+    expect(recentFiles([ok([b, bad, a])], 3)).toEqual([b, a, bad]);
+    expect(recentFiles([ok([a, b, bad])], 3)).toEqual([b, a, bad]);
   });
 });
 

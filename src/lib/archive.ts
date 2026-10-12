@@ -93,6 +93,7 @@ function rowsFromMeetings(meetings: Meeting[]): Map<string, WorkingRow> {
   for (const meeting of ordered) {
     const date = localDate(meeting.start);
     const row = rows.get(date) ?? newRow(date, false);
+    // Two meetings on one local date share a row; the ordering above makes the earliest the one kept.
     row.meeting ??= meeting;
     rows.set(date, row);
   }
@@ -145,10 +146,12 @@ function attach(rows: Map<string, WorkingRow>, candidates: Candidate[]): void {
   }
 }
 
+/** `modifiedTime` as epoch milliseconds; a missing or unparseable value counts as oldest (0), never NaN. */
+const modifiedMs = (f: DriveFile): number => Date.parse(f.modifiedTime) || 0;
+
 /** Non-draft first, then newest `modifiedTime`, then id. */
 function preferred(a: Candidate, b: Candidate): number {
-  const time = (c: Candidate) => Date.parse(c.file.modifiedTime) || 0;
-  return Number(a.draft) - Number(b.draft) || time(b) - time(a) || compareText(a.file.id, b.file.id);
+  return Number(a.draft) - Number(b.draft) || modifiedMs(b.file) - modifiedMs(a.file) || compareText(a.file.id, b.file.id);
 }
 
 function byDate(a: Candidate, b: Candidate): number {
@@ -210,7 +213,7 @@ export function visibleFiles(files: DriveFile[]): DriveFile[] {
 
 export function recentFiles(folders: FolderResult[], n: number): DriveFile[] {
   return visibleFiles(folders.flatMap((f) => (f.ok ? f.files : [])))
-    .sort((a, b) => Date.parse(b.modifiedTime) - Date.parse(a.modifiedTime) || compareText(a.id, b.id))
+    .sort((a, b) => modifiedMs(b) - modifiedMs(a) || compareText(a.id, b.id))
     .slice(0, n);
 }
 
