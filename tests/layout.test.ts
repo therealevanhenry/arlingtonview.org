@@ -1,13 +1,20 @@
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
-import { beforeAll, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import Footer from "../src/components/Footer.astro";
 import Header from "../src/components/Header.astro";
 import Base from "../src/layouts/Base.astro";
 
 const ORIGIN = "https://arlingtonview.org";
 const FULL_TRACE_VIEWBOX = "0 0 371.8 392.3";
+// A distinctive run from the full trace's path data, read from the file so it follows the asset.
+const FULL_TRACE_PATH = /\sd="([^"]{60})/.exec(readFileSync("src/assets/logo.svg", "utf8"))?.[1] ?? "";
 let container: AstroContainer;
 let containerWithSite: AstroContainer;
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 beforeAll(async () => {
   container = await AstroContainer.create();
@@ -96,6 +103,20 @@ describe("Header", () => {
   });
 });
 
+describe("Header under a non-root base", () => {
+  it("prefixes every href and marks the current section", async () => {
+    vi.stubEnv("BASE_URL", "/arlingtonview.org/");
+    const html = await container.renderToString(Header, { request: at("/arlingtonview.org/about/history/") });
+    const hrefs = [...html.matchAll(/<a[^>]*class="site-nav-link"[^>]*href="([^"]+)"/g)].map((m) => m[1]);
+    expect(hrefs).toEqual(
+      ["/meetings/", "/documents/", "/about/", "/join/", "/resources/"].map((r) => `/arlingtonview.org${r}`),
+    );
+    expect(html).toMatch(/<a[^>]*class="brand"[^>]*href="\/arlingtonview\.org\/"/);
+    const current = [...html.matchAll(/<a[^>]*href="([^"]+)"[^>]*aria-current="page"/g)].map((m) => m[1]);
+    expect(current).toEqual(["/arlingtonview.org/about/"]);
+  });
+});
+
 describe("Base", () => {
   it("titles an inner page as '<title> | Arlington View Civic Association'", async () => {
     const html = await container.renderToString(Base, {
@@ -112,11 +133,26 @@ describe("Base", () => {
   it("titles the home page with the organization name alone and a default description", async () => {
     const html = await container.renderToString(Base, {
       request: at("/"),
-      props: { title: "Home" },
+      props: { home: true },
       slots: { default: "<h1>Arlington View Civic Association</h1>" },
     });
     expect(html).toContain("<title>Arlington View Civic Association</title>");
     expect(html).toMatch(/<meta name="description" content="[^"]{40,}">/);
+  });
+
+  it("decides the home title from the home prop, not the pathname", async () => {
+    const asHome = await container.renderToString(Base, {
+      request: at("/meetings/"),
+      props: { home: true },
+      slots: { default: "<h1>x</h1>" },
+    });
+    expect(asHome).toContain("<title>Arlington View Civic Association</title>");
+    const notHome = await container.renderToString(Base, {
+      request: at("/"),
+      props: { title: "Home" },
+      slots: { default: "<h1>x</h1>" },
+    });
+    expect(notHome).toContain("<title>Home | Arlington View Civic Association</title>");
   });
 
   it("omits the canonical link when no site is configured", async () => {
@@ -148,17 +184,18 @@ describe("Base", () => {
   it("keeps the full logo trace out of the page", async () => {
     const html = await container.renderToString(Base, {
       request: at("/"),
-      props: { title: "Home" },
+      props: { home: true },
       slots: { default: "<h1>Arlington View Civic Association</h1>" },
     });
+    expect(FULL_TRACE_PATH.length).toBe(60);
     expect(html).not.toContain(FULL_TRACE_VIEWBOX);
-    expect(html.length).toBeLessThan(8000);
+    expect(html).not.toContain(FULL_TRACE_PATH);
   });
 
   it("ships no script and opens nothing in a new tab", async () => {
     const html = await container.renderToString(Base, {
       request: at("/"),
-      props: { title: "Home", lastUpdated: "2026-09-30T14:00:00Z" },
+      props: { home: true, lastUpdated: "2026-09-30T14:00:00Z" },
       slots: { default: "<h1>Arlington View Civic Association</h1>" },
     });
     expect(html).not.toContain("<script");
@@ -169,7 +206,7 @@ describe("Base", () => {
   it("takes the footer contact email from the site settings", async () => {
     const html = await container.renderToString(Base, {
       request: at("/"),
-      props: { title: "Home" },
+      props: { home: true },
       slots: { default: "<h1>Arlington View Civic Association</h1>" },
     });
     expect(html).toContain('href="mailto:president@arlingtonview.org"');

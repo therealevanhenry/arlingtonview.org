@@ -12,15 +12,18 @@ function normalizeBase(base: string): string {
   return trimmed === "" ? "" : trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
+const STATIC_FILE = /\.(?:html|xml|txt|ico|svg|png|jpe?g|webp|css|js|json|pdf)$/i;
+
 /**
  * `/about`, `/about/`, and `about` all become `/about/`; the home path stays `/`.
- * A path whose last segment looks like a file (`/404.html`) gets no trailing slash.
+ * A path whose last segment ends in a known static-file extension (`/404.html`) gets no trailing
+ * slash; any other dot (a route such as `/about/v1.2/`) is part of a page name.
  */
 function withTrailingSlash(path: string): string {
   const trimmed = path.replace(/^\/+|\/+$/g, "");
   if (trimmed === "") return "/";
   const lastSegment = trimmed.slice(trimmed.lastIndexOf("/") + 1);
-  return lastSegment.includes(".") ? `/${trimmed}` : `/${trimmed}/`;
+  return STATIC_FILE.test(lastSegment) ? `/${trimmed}` : `/${trimmed}/`;
 }
 
 /**

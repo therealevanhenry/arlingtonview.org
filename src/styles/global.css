@@ -39,7 +39,8 @@ html {
 body {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100vh; /* fallback for browsers without dynamic viewport units */
+  min-height: 100dvh;
   background-color: var(--paper);
   color: var(--ink);
   font-family: var(--font-body);
@@ -517,12 +518,7 @@ a:hover {
   border-block-start: 1px solid var(--rule);
 }
 
-.entry-title {
-  font-family: var(--font-display);
-  font-size: var(--step-1);
-  font-weight: 600;
-  line-height: var(--leading-heading);
-}
+/* .entry-title (on each entry's h3) adds nothing to the base h3 rule; the class stays as a hook. */
 
 /* ---------- File list ---------- */
 

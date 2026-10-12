@@ -15,7 +15,7 @@ const agendaUrl = meeting ? agendaFor(meeting, rows) : undefined;
 const recent = recentFiles([folders.meetings, folders.presentations], 3);
 ---
 
-<Base title="Home" lastUpdated={lastUpdated(data)}>
+<Base home lastUpdated={lastUpdated(data)}>
   <h1 class="visually-hidden">Arlington View Civic Association</h1>
   <div class="sections">
     <NextMeeting meeting={meeting} settings={settings} agendaUrl={agendaUrl} />

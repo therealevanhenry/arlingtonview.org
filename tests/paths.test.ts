@@ -110,3 +110,20 @@ describe("isCurrentSection", () => {
     expect(isCurrentSection("/about/", "/", "/")).toBe(false);
   });
 });
+
+describe("file-like last segments", () => {
+  it("keeps the trailing slash on a route whose last segment contains a dot", () => {
+    expect(stripBase("/about/v1.2", "/")).toBe("/about/v1.2/");
+    expect(stripBase("/about/v1.2/", "/")).toBe("/about/v1.2/");
+    expect(stripBase("/arlingtonview.org/about/v1.2", "/arlingtonview.org/")).toBe("/about/v1.2/");
+    expect(isCurrentSection("/about/v1.2/", "/about/", "/")).toBe(true);
+  });
+
+  it("gives no trailing slash to a known static file extension", () => {
+    for (const file of ["404.html", "sitemap.xml", "robots.txt", "favicon.ico", "logo.svg", "a.png", "a.jpg", "a.jpeg", "a.webp", "s.css", "s.js", "d.json", "f.pdf"]) {
+      expect(stripBase(`/${file}`, "/"), file).toBe(`/${file}`);
+      expect(stripBase(`/docs/${file}`, "/"), file).toBe(`/docs/${file}`);
+    }
+    expect(stripBase("/404.HTML", "/")).toBe("/404.HTML");
+  });
+});

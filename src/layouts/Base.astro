@@ -8,23 +8,24 @@ import Header from "../components/Header.astro";
 import { stripBase, withBase } from "../lib/paths";
 import { getSettings } from "../lib/settings";
 
-interface Props {
-  /** Page title. The home page ignores it and uses the organization name alone. */
-  title: string;
+interface Common {
   description?: string;
   /** ISO timestamp of the newest content shown; the footer prints it as a New York date. */
   lastUpdated?: string;
 }
+type Props =
+  /** The home page: the `<title>` is the site name alone. */
+  | (Common & { home: true; title?: string })
+  /** Any other page: `<title>` is `<title> | <site name>`. */
+  | (Common & { home?: false; title: string });
 
-const SITE_NAME = "Arlington View Civic Association";
 const DEFAULT_DESCRIPTION =
   "Arlington View Civic Association (AVCA): meeting dates, minutes, bylaws, and county resources for the Arlington View neighborhood of Arlington, Virginia.";
-const { contactEmail } = await getSettings();
+const { contactEmail, siteName } = await getSettings();
 
-const { title, description = DEFAULT_DESCRIPTION, lastUpdated } = Astro.props;
+const { title, home = false, description = DEFAULT_DESCRIPTION, lastUpdated } = Astro.props;
 
-const isHome = stripBase(Astro.url.pathname) === "/";
-const pageTitle = isHome ? SITE_NAME : `${title} | ${SITE_NAME}`;
+const pageTitle = home || title === undefined ? siteName : `${title} | ${siteName}`;
 // Canonical keeps the base (the github.io preview lives under one) and always ends in a slash.
 const canonical = Astro.site
   ? new URL(withBase(stripBase(Astro.url.pathname)), Astro.site).href

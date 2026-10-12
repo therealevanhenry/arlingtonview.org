@@ -7,6 +7,7 @@ import RecentFiles from "../src/components/RecentFiles.astro";
 import type { Meeting } from "../src/lib/calendar";
 import { nextMeeting } from "../src/lib/calendar";
 import type { DriveFile } from "../src/lib/drive";
+import { withBase } from "../src/lib/paths";
 import { getSettings, type Settings } from "../src/lib/settings";
 import Home from "../src/pages/index.astro";
 
@@ -240,7 +241,7 @@ describe("NextMeeting", () => {
 
   it("never prints the title", async () => {
     const html = await container.renderToString(NextMeeting, { props: { meeting: sample, settings } });
-    expect(html).not.toContain("AVCA General Meeting</");
+    expect(html).not.toContain("AVCA General Meeting");
   });
 });
 
@@ -262,7 +263,7 @@ describe("home page", () => {
   it("links How to join as a plain link under the lead paragraph", async () => {
     const html = main(await render([sample]));
     expect(html).toMatch(/<p class="lead">\s*The Arlington View Civic Association/);
-    expect(html).toMatch(/<a href="\/join\/">How to join<\/a>/);
+    expect(html).toContain(`<a href="${withBase("/join/")}">How to join</a>`);
     expect(html.indexOf('class="lead"')).toBeLessThan(html.indexOf("How to join"));
     expect(html.indexOf("</section>")).toBeLessThan(html.indexOf('class="lead"'));
   });
