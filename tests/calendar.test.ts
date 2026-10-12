@@ -245,3 +245,69 @@ describe("loadCalendar", () => {
     expect(r.ok).toBe(false);
   });
 });
+
+const wrap = (...events: string[]): string =>
+  ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//AVCA//Test//EN", ...events, "END:VCALENDAR"].join("\r\n");
+const vevent = (uid: string, ...lines: string[]): string =>
+  ["BEGIN:VEVENT", `UID:${uid}`, "DTSTAMP:20250901T000000Z", ...lines, "SUMMARY:Test", "END:VEVENT"].join("\r\n");
+
+describe("parseIcs window, all-day events, and default duration", () => {
+  const winNow = new Date("2026-10-06T18:00:00Z");
+
+  it("applies [now - 2y, now + 1y] to standalone events", () => {
+    const body = wrap(
+      vevent("before", "DTSTART:20241006T170000Z", "DTEND:20241006T180000Z"),
+      vevent("after-from", "DTSTART:20241006T190000Z", "DTEND:20241006T200000Z"),
+      vevent("before-to", "DTSTART:20271006T170000Z", "DTEND:20271006T180000Z"),
+      vevent("after-to", "DTSTART:20271006T190000Z", "DTEND:20271006T200000Z"),
+    );
+    expect(parseIcs(body, winNow).map((m) => m.uid)).toEqual(["after-from", "before-to"]);
+  });
+
+  it("skips all-day events, standalone and recurring", () => {
+    const body = wrap(
+      vevent("holiday", "DTSTART;VALUE=DATE:20261225", "DTEND;VALUE=DATE:20261226"),
+      vevent("yearly", "DTSTART;VALUE=DATE:20260101", "DTEND;VALUE=DATE:20260102", "RRULE:FREQ=MONTHLY"),
+      vevent("meeting", "DTSTART:20261020T230000Z", "DTEND:20261021T003000Z"),
+    );
+    expect(parseIcs(body, winNow).map((m) => m.uid)).toEqual(["meeting"]);
+  });
+
+  it("gives a timed event with no DTEND a 90-minute duration", () => {
+    const body = wrap(vevent("open-ended", "DTSTART:20261020T230000Z"));
+    const [m] = parseIcs(body, winNow);
+    expect(m.end.getTime() - m.start.getTime()).toBe(90 * 60 * 1000);
+  });
+});
+
+describe("parseIcs cancellations and empty futures", () => {
+  it("drops a STATUS:CANCELLED override inside a recurring series and keeps the rest", () => {
+    const body = wrap(
+      vevent("series", "DTSTART:20261020T230000Z", "DTEND:20261021T003000Z", "RRULE:FREQ=MONTHLY;COUNT=3"),
+      [
+        "BEGIN:VEVENT",
+        "UID:series",
+        "DTSTAMP:20250901T000000Z",
+        "RECURRENCE-ID:20261120T230000Z",
+        "DTSTART:20261120T230000Z",
+        "DTEND:20261121T003000Z",
+        "STATUS:CANCELLED",
+        "SUMMARY:Test",
+        "END:VEVENT",
+      ].join("\r\n"),
+    );
+    const dates = parseIcs(body, new Date("2026-10-06T18:00:00Z")).map((m) => m.start.toISOString().slice(0, 10));
+    expect(dates).toEqual(["2026-10-20", "2026-12-20"]);
+  });
+
+  it("has no next meeting when every event is in the past", () => {
+    const body = wrap(
+      vevent("old-1", "DTSTART:20250120T230000Z", "DTEND:20250121T003000Z"),
+      vevent("old-2", "DTSTART:20250220T230000Z", "DTEND:20250221T003000Z"),
+    );
+    const later = new Date("2026-10-06T18:00:00Z");
+    const meetings = parseIcs(body, later);
+    expect(meetings).toHaveLength(2);
+    expect(nextMeeting(meetings, later)).toBeUndefined();
+  });
+});

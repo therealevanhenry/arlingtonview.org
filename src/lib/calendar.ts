@@ -15,6 +15,8 @@ export type CalendarResult = { ok: true; meetings: Meeting[] } | { ok: false; re
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 10_000;
+/** A timed event with no DTEND (or an end not after its start) is shown as a 90-minute meeting, the length of a regular AVCA meeting. */
+const DEFAULT_DURATION_MS = 90 * 60 * 1000;
 const AGENDA_URL = /https:\/\/(?:docs|drive)\.google\.com[^\s"'<>\\]*/;
 const ANY_URL = /https?:\/\//i;
 const VIRTUAL_WORDS = /\b(?:virtual|zoom|meet|online)\b/i;
@@ -38,7 +40,7 @@ function toMeeting(event: VEvent, start: Date, end: Date): Meeting | undefined {
   const meeting: Meeting = {
     uid: event.uid,
     start: new Date(start.getTime()),
-    end: new Date(end.getTime()),
+    end: new Date(end.getTime() > start.getTime() ? end.getTime() : start.getTime() + DEFAULT_DURATION_MS),
     title: text(event.summary).trim() || "Meeting",
     isVirtual: location === undefined || VIRTUAL_WORDS.test(location),
   };
@@ -47,11 +49,15 @@ function toMeeting(event: VEvent, start: Date, end: Date): Meeting | undefined {
   return meeting;
 }
 
+const isAllDay = (event: VEvent): boolean =>
+  event.datetype === "date" || (event.start as { dateOnly?: boolean } | undefined)?.dateOnly === true;
+
 /**
  * Parses an ICS feed into meetings sorted ascending. Recurring series are expanded over
  * [now - 2y, now + 1y] with node-ical's `expandRecurringEvent`, which resolves the series in its own
  * TZID (so 7 pm stays 7 pm across DST) and applies EXDATE and RECURRENCE-ID overrides. Cancelled
- * events and instances are dropped.
+ * events and instances are dropped, as are all-day events (not meetings). Standalone events get the
+ * same window as recurring ones, judged by their start.
  */
 export function parseIcs(body: string, now: Date): Meeting[] {
   const from = new Date(now.getTime() - 2 * 365 * DAY_MS);
@@ -61,12 +67,14 @@ export function parseIcs(body: string, now: Date): Meeting[] {
     (item): item is VEvent => item?.type === "VEVENT",
   );
   for (const item of events) {
+    if (isAllDay(item)) continue;
     if (item.rrule) {
       for (const i of ical.expandRecurringEvent(item, { from, to })) {
         const m = toMeeting(i.event, i.start, i.end);
         if (m) meetings.push(m);
       }
     } else if (item.start instanceof Date && !Number.isNaN(item.start.getTime())) {
+      if (item.start < from || item.start > to) continue;
       const m = toMeeting(item, item.start, item.end instanceof Date ? item.end : item.start);
       if (m) meetings.push(m);
     }

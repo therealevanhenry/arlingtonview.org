@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { formatMeetingRange, localDate, nowInNewYork } from "../src/lib/time";
+import {
+  formatCalendarDate,
+  formatMeetingDate,
+  formatMeetingMonthDay,
+  formatMeetingRange,
+  formatMeetingTime,
+  formatMeetingWeekday,
+  localDate,
+  nowInNewYork,
+} from "../src/lib/time";
 
 describe("formatMeetingRange", () => {
   it("formats a range in New York time", () => {
@@ -18,6 +27,20 @@ describe("formatMeetingRange", () => {
     expect(
       formatMeetingRange(new Date("2026-11-18T00:00:00Z"), new Date("2026-11-18T01:30:00Z")),
     ).toBe("Tuesday, November 17, 2026, 7:00 to 8:30 pm");
+  });
+});
+
+describe("formatMeetingRange across local midnight", () => {
+  it("appends the end date", () => {
+    expect(
+      formatMeetingRange(new Date("2026-09-29T23:00:00Z"), new Date("2026-09-30T05:00:00Z")),
+    ).toBe("Tuesday, September 29, 2026, 7:00 pm to Wednesday, September 30, 2026, 1:00 am");
+  });
+
+  it("does not append it when the end is before local midnight, even if UTC has rolled over", () => {
+    expect(
+      formatMeetingRange(new Date("2026-09-29T23:00:00Z"), new Date("2026-09-30T03:30:00Z")),
+    ).toBe("Tuesday, September 29, 2026, 7:00 to 11:30 pm");
   });
 });
 
@@ -40,28 +63,24 @@ describe("formatMeetingDate and formatMeetingTime", () => {
   const start = new Date("2026-09-29T23:00:00Z");
   const end = new Date("2026-09-30T00:30:00Z");
 
-  it("splits the range into a date and a time", async () => {
-    const { formatMeetingDate, formatMeetingTime } = await import("../src/lib/time");
+  it("splits the range into a date and a time", () => {
     expect(formatMeetingDate(start)).toBe("Tuesday, September 29, 2026");
     expect(formatMeetingTime(start, end)).toBe("7:00 to 8:30 pm");
   });
 
-  it("formats a bare calendar date in New York time", async () => {
-    const { formatCalendarDate } = await import("../src/lib/time");
+  it("formats a bare calendar date in New York time", () => {
     expect(formatCalendarDate(new Date("2026-10-07T02:30:00Z"))).toBe("October 6, 2026");
   });
 });
 
 describe("formatMeetingWeekday and formatMeetingMonthDay", () => {
-  it("give the two lines of the home lockup for the sample meeting", async () => {
-    const { formatMeetingWeekday, formatMeetingMonthDay } = await import("../src/lib/time");
+  it("give the two lines of the home lockup for the sample meeting", () => {
     const start = new Date("2026-09-29T23:00:00Z");
     expect(formatMeetingWeekday(start)).toBe("Tuesday");
     expect(formatMeetingMonthDay(start)).toBe("September 29");
   });
 
-  it("use the New York calendar day at a UTC day boundary", async () => {
-    const { formatMeetingWeekday, formatMeetingMonthDay } = await import("../src/lib/time");
+  it("use the New York calendar day at a UTC day boundary", () => {
     // 03:59:59 UTC on Wednesday, September 30 is still 11:59:59 pm on Tuesday, September 29 in Arlington (EDT).
     const lastSecond = new Date("2026-09-30T03:59:59Z");
     expect(formatMeetingWeekday(lastSecond)).toBe("Tuesday");
@@ -71,8 +90,7 @@ describe("formatMeetingWeekday and formatMeetingMonthDay", () => {
     expect(formatMeetingMonthDay(midnight)).toBe("September 30");
   });
 
-  it("cross a month boundary in standard time", async () => {
-    const { formatMeetingWeekday, formatMeetingMonthDay } = await import("../src/lib/time");
+  it("cross a month boundary in standard time", () => {
     // EST is UTC-5: 04:59:59 UTC on December 1 is 11:59:59 pm on Monday, November 30.
     const lastSecond = new Date("2026-12-01T04:59:59Z");
     expect(formatMeetingWeekday(lastSecond)).toBe("Monday");
@@ -82,8 +100,7 @@ describe("formatMeetingWeekday and formatMeetingMonthDay", () => {
     expect(formatMeetingMonthDay(midnight)).toBe("December 1");
   });
 
-  it("are what formatMeetingDate is composed from, with the New York year", async () => {
-    const { formatMeetingDate, formatMeetingWeekday, formatMeetingMonthDay } = await import("../src/lib/time");
+  it("are what formatMeetingDate is composed from, with the New York year", () => {
     const start = new Date("2026-09-29T23:00:00Z");
     expect(formatMeetingDate(start)).toBe("Tuesday, September 29, 2026");
     expect(formatMeetingDate(start)).toBe(`${formatMeetingWeekday(start)}, ${formatMeetingMonthDay(start)}, 2026`);

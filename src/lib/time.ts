@@ -46,8 +46,16 @@ export function formatMeetingTime(start: Date, end: Date): string {
   return `${startText} to ${e.time} ${e.meridiem}`;
 }
 
-/** e.g. `Wednesday, September 23, 2026, 7:00 to 8:30 pm` (New York time). */
+/**
+ * e.g. `Wednesday, September 23, 2026, 7:00 to 8:30 pm` (New York time). A range that crosses local
+ * midnight names both days: `Tuesday, September 29, 2026, 7:00 pm to Wednesday, September 30, 2026, 1:00 am`.
+ */
 export function formatMeetingRange(start: Date, end: Date): string {
+  if (localDate(start) !== localDate(end)) {
+    const s = clock(start);
+    const e = clock(end);
+    return `${formatMeetingDate(start)}, ${s.time} ${s.meridiem} to ${formatMeetingDate(end)}, ${e.time} ${e.meridiem}`;
+  }
   return `${formatMeetingDate(start)}, ${formatMeetingTime(start, end)}`;
 }
 
