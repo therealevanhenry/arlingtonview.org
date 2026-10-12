@@ -79,3 +79,123 @@ export async function box(locator: Locator): Promise<{ x: number; y: number; wid
   return { x, y, width, height, right: x + width, bottom: y + height };
 }
 
+
+// ---------- WCAG contrast (used where axe reports color-contrast as "incomplete") ----------
+
+export type Rgba = { r: number; g: number; b: number; a: number };
+
+/** Parses a computed `rgb()`/`rgba()` colour (what getComputedStyle returns for sRGB colours). */
+export function parseRgba(css: string): Rgba {
+  const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(css.trim());
+  if (!m) throw new Error(`unsupported colour syntax: ${css}`);
+  const alpha = m[4] === undefined ? 1 : m[4].endsWith("%") ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+  return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: alpha };
+}
+
+/** `top` drawn over an opaque `bottom`. */
+export function composite(top: Rgba, bottom: Rgba): Rgba {
+  const mix = (t: number, b: number): number => t * top.a + b * (1 - top.a);
+  return { r: mix(top.r, bottom.r), g: mix(top.g, bottom.g), b: mix(top.b, bottom.b), a: 1 };
+}
+
+/** WCAG 2.x relative luminance of an opaque colour. */
+export function relativeLuminance({ r, g, b }: Rgba): number {
+  const lin = (v: number): number => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+export function contrastRatio(a: Rgba, b: Rgba): number {
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Large text per WCAG: at least 24px, or at least 18.66px and bold (700+). */
+export const isLargeText = (fontSizePx: number, fontWeight: number): boolean =>
+  fontSizePx >= 24 || (fontSizePx >= 18.66 && fontWeight >= 700);
+
+/** The page background (--paper) is the last resort when no ancestor paints one. */
+const PAPER: Rgba = { r: 0xfb, g: 0xfa, b: 0xf7, a: 1 };
+
+/** Background behind an element from its ancestors' computed backgrounds, nearest first, compositing any alpha. */
+export function effectiveBackground(nearestFirst: string[]): Rgba {
+  const layers: Rgba[] = [];
+  let base = PAPER;
+  for (const css of nearestFirst) {
+    const c = parseRgba(css);
+    if (c.a === 0) continue;
+    layers.push(c);
+    if (c.a === 1) {
+      base = c;
+      layers.pop();
+      break;
+    }
+  }
+  return layers.reduceRight((under, layer) => composite(layer, under), base);
+}
+
+export interface ContrastMeasurement {
+  element: string;
+  color: string;
+  background: string;
+  ratio: number;
+  required: number;
+  /** An ancestor's ::before/::after box overlaps this element's box (so its background is truly indeterminate). */
+  overlappedBy: string[];
+}
+
+const hex = (c: Rgba): string => `#${[c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+
+/** Measures one element in the page: its colour against the effective background, and any pseudo-element overlap. */
+export async function measureContrast(locator: Locator): Promise<ContrastMeasurement> {
+  const raw = await locator.evaluate((el) => {
+    const backgrounds: string[] = [];
+    const overlappedBy: string[] = [];
+    const rect = el.getBoundingClientRect();
+    for (let a: Element | null = el; a; a = a.parentElement) {
+      backgrounds.push(getComputedStyle(a).backgroundColor);
+      if (a === el) continue;
+      const box = a.getBoundingClientRect();
+      for (const which of ["::before", "::after"] as const) {
+        const p = getComputedStyle(a, which);
+        if (p.content === "none" || p.display === "none") continue;
+        // Positioned pseudo-elements: top/left/width/height are used px values relative to the ancestor.
+        // Anything not resolvable to pixels is treated as overlapping (the safe answer).
+        const top = parseFloat(p.top);
+        const left = parseFloat(p.left);
+        const width = parseFloat(p.width);
+        const height = parseFloat(p.height);
+        const resolvable = p.position === "absolute" && [top, left, width, height].every(Number.isFinite);
+        const pseudo = resolvable
+          ? { top: box.top + top, bottom: box.top + top + height, left: box.left + left, right: box.left + left + width }
+          : undefined;
+        const overlaps =
+          pseudo === undefined ||
+          (rect.top < pseudo.bottom && rect.bottom > pseudo.top && rect.left < pseudo.right && rect.right > pseudo.left);
+        if (overlaps) overlappedBy.push(`${a.tagName.toLowerCase()}.${a.className}${which} ${pseudo ? `(${Math.round(pseudo.top)}..${Math.round(pseudo.bottom)} vs element ${Math.round(rect.top)})` : "(unresolvable)"}`);
+      }
+    }
+    const s = getComputedStyle(el);
+    return {
+      element: `<${el.tagName.toLowerCase()} class="${el.className}"> ${(el.textContent ?? "").trim().slice(0, 30)}`,
+      color: s.color,
+      backgrounds,
+      fontSize: parseFloat(s.fontSize),
+      fontWeight: Number(s.fontWeight),
+      overlappedBy,
+    };
+  });
+  const background = effectiveBackground(raw.backgrounds);
+  const fg = parseRgba(raw.color);
+  const color = fg.a < 1 ? composite(fg, background) : fg;
+  return {
+    element: raw.element,
+    color: hex(color),
+    background: hex(background),
+    ratio: contrastRatio(color, background),
+    required: isLargeText(raw.fontSize, raw.fontWeight) ? 3 : 4.5,
+    overlappedBy: raw.overlappedBy,
+  };
+}
