@@ -22,11 +22,14 @@ export type DriveRoot = "bylaws" | "meetings" | "presentations" | "letters" | "n
 
 const API_URL = "https://www.googleapis.com/drive/v3/files";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+/** A shortcut can point at anything, including files outside the published folders, so it is never listed. */
+const SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 const FIELDS = "nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink)";
 const FETCH_TIMEOUT_MS = 10_000;
 const CONCURRENCY = 6;
 const MAX_PAGES = 50;
-const ROOTS: DriveRoot[] = ["bylaws", "meetings", "presentations", "letters", "neighborhoodPlan"];
+/** The published roots, in the one order used wherever they are listed (logs, build-meta.json). */
+export const DRIVE_ROOTS: readonly DriveRoot[] = ["bylaws", "meetings", "presentations", "letters", "neighborhoodPlan"];
 
 type Raw = { id: string; name: string; mimeType: string; modifiedTime?: string; webViewLink?: string };
 type Fail = { ok: false; reason: string };
@@ -175,20 +178,6 @@ async function guarded(
   }
 }
 
-/** Lists one folder (all pages). Never throws; warns once on failure. */
-export function listFolder(
-  folderId: string,
-  apiKey: string | undefined,
-  fetchImpl: typeof fetch = fetch,
-  timeoutMs: number = FETCH_TIMEOUT_MS,
-): Promise<FolderResult> {
-  return guarded(folderId, apiKey, async (id, key) => {
-    const listing = await listRaw(id, key, fetchImpl, timeoutMs);
-    if (!listing.ok) return listing;
-    return { ok: true, files: listing.raw.map((r) => toFile(r, [])).sort(compareFiles) };
-  });
-}
-
 /**
  * Runs `task` over `items` with at most `limit` in flight; stops starting new work after a failure.
  * Results are in item order (items never started are omitted), not completion order.
@@ -219,6 +208,11 @@ async function mapLimit<T, R>(
  * Lists a folder and its subfolders breadth-first into one flat array. `maxDepth` is the number of
  * subfolder levels descended below the root; deeper folders appear as `isFolder` entries only.
  * All-or-nothing: any failed request fails the root, reported as the first failure in listing order.
+ * Never throws; warns once on failure.
+ *
+ * A tree with no files at all fails with "empty listing". `files.list` answers HTTP 200 with fewer or no
+ * files when link sharing is removed from a folder, and every published root holds files, so an empty
+ * root is far more likely a sharing change than a fact. Shortcuts are skipped and do not count.
  */
 export function listTree(
   folderId: string,
@@ -243,6 +237,7 @@ export function listTree(
       for (const { node, listing } of listings) {
         if (!listing.ok) continue;
         for (const raw of listing.raw) {
+          if (raw.mimeType === SHORTCUT_MIME) continue;
           const file = toFile(raw, node.path);
           files.push(file);
           if (file.isFolder) nextLevel.push({ id: file.id, path: [...node.path, file.name] });
@@ -250,6 +245,7 @@ export function listTree(
       }
       level = nextLevel;
     }
+    if (!files.some((f) => !f.isFolder)) return { ok: false, reason: "empty listing" };
     return { ok: true, files: files.sort(compareFiles) };
   });
 }
@@ -260,6 +256,6 @@ export async function loadAllFolders(
   apiKey: string | undefined,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Record<DriveRoot, FolderResult>> {
-  const results = await Promise.all(ROOTS.map((k) => listTree(settings.drive[k], apiKey, fetchImpl)));
-  return Object.fromEntries(ROOTS.map((k, i) => [k, results[i]])) as Record<DriveRoot, FolderResult>;
+  const results = await Promise.all(DRIVE_ROOTS.map((k) => listTree(settings.drive[k], apiKey, fetchImpl)));
+  return Object.fromEntries(DRIVE_ROOTS.map((k, i) => [k, results[i]])) as Record<DriveRoot, FolderResult>;
 }

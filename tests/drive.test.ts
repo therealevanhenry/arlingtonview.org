@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import minutesFixture from "./fixtures/drive-minutes.json";
-import { listFolder, listTree, loadAllFolders } from "../src/lib/drive";
+import { listTree, loadAllFolders } from "../src/lib/drive";
 import type { Settings } from "../src/lib/settings";
 
 const FOLDER = "application/vnd.google-apps.folder";
@@ -55,9 +55,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("listFolder", () => {
+// One folder with no subfolders: a single request per page, so these cover the request, retry, and failure policy.
+describe("listTree: one folder (requests, retries, failures)", () => {
   it("maps files and parses dates", async () => {
-    const r = await listFolder("F1", "k", mockFetch(minutesFixture));
+    const r = await listTree("F1", "k", mockFetch(minutesFixture));
     expect(r.ok && r.files[0].meetingDate).toBe("2026-06-24");
     if (!r.ok) throw new Error("expected ok");
     expect(r.folderUrl).toBe(folderUrl("F1"));
@@ -87,7 +88,7 @@ describe("listFolder", () => {
         entry("d", "AVCA Agenda 2024-01-01 v2", DOC, "2024-02-01T00:00:00Z"),
       ],
     };
-    const r = await listFolder("F1", "k", mockFetch(body));
+    const r = await listTree("F1", "k", mockFetch(body));
     expect(r.ok && r.files.map((f) => f.id)).toEqual(["d", "c", "b", "a"]);
   });
 
@@ -100,7 +101,7 @@ describe("listFolder", () => {
         ? json({ files: [entry("p2", "Two")] })
         : json({ files: [entry("p1", "One")], nextPageToken: "T2" });
     }) as unknown as typeof fetch;
-    const r = await listFolder("F1", "k", fetchImpl);
+    const r = await listTree("F1", "k", fetchImpl);
     expect(r.ok && r.files.length).toBe(2);
     expect(urls).toHaveLength(2);
     expect(urls[0].searchParams.has("pageToken")).toBe(false);
@@ -114,9 +115,9 @@ describe("listFolder", () => {
     const urls: URL[] = [];
     const fetchImpl = (async (input: RequestInfo | URL) => {
       urls.push(new URL(String(input)));
-      return json({ files: [] });
+      return json({ files: [entry("a", "A")] });
     }) as unknown as typeof fetch;
-    await listFolder("F 1&x", "k", fetchImpl);
+    await listTree("F 1&x", "k", fetchImpl);
     const u = urls[0];
     expect(u.origin + u.pathname).toBe("https://www.googleapis.com/drive/v3/files");
     expect(u.searchParams.get("q")).toBe("'F 1&x' in parents and trashed=false");
@@ -128,7 +129,7 @@ describe("listFolder", () => {
 
   it("returns ok:false with folderUrl on 403 and does not retry", async () => {
     const fetchImpl = vi.fn(async () => new Response("{}", { status: 403 }));
-    const r = await listFolder("F1", "k", fetchImpl as unknown as typeof fetch);
+    const r = await listTree("F1", "k", fetchImpl as unknown as typeof fetch);
     expect(r).toEqual({ ok: false, folderUrl: folderUrl("F1"), reason: "HTTP 403" });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledTimes(1);
@@ -137,7 +138,7 @@ describe("listFolder", () => {
 
   it("returns ok:false when apiKey is undefined without calling fetch", async () => {
     const spy = vi.fn();
-    const r = await listFolder("F1", undefined, spy as unknown as typeof fetch);
+    const r = await listTree("F1", undefined, spy as unknown as typeof fetch);
     expect(spy).not.toHaveBeenCalled();
     expect(r).toEqual({ ok: false, folderUrl: folderUrl("F1"), reason: "no API key" });
     expect(warn).toHaveBeenCalledTimes(1);
@@ -145,7 +146,7 @@ describe("listFolder", () => {
 
   it("returns ok:false with reason 'no folder ID' for a blank ID, without fetching", async () => {
     const spy = vi.fn();
-    const r = await listFolder("  ", "k", spy as unknown as typeof fetch);
+    const r = await listTree("  ", "k", spy as unknown as typeof fetch);
     expect(spy).not.toHaveBeenCalled();
     expect(!r.ok && r.reason).toBe("no folder ID");
     expect(warn).toHaveBeenCalledTimes(1);
@@ -154,7 +155,7 @@ describe("listFolder", () => {
   it("short-circuits on OFFLINE=1 without fetching", async () => {
     process.env.OFFLINE = "1";
     const spy = vi.fn();
-    const r = await listFolder("F1", "k", spy as unknown as typeof fetch);
+    const r = await listTree("F1", "k", spy as unknown as typeof fetch);
     expect(spy).not.toHaveBeenCalled();
     expect(r).toEqual({ ok: false, folderUrl: folderUrl("F1"), reason: "offline" });
   });
@@ -162,7 +163,7 @@ describe("listFolder", () => {
   it("retries once on a 5xx and then succeeds", async () => {
     let calls = 0;
     const fetchImpl = (async () => (++calls === 1 ? new Response("", { status: 503 }) : json({ files: [entry("a", "A")] }))) as unknown as typeof fetch;
-    const r = await listFolder("F1", "k", fetchImpl);
+    const r = await listTree("F1", "k", fetchImpl);
     expect(r.ok).toBe(true);
     expect(calls).toBe(2);
     expect(warn).not.toHaveBeenCalled();
@@ -172,14 +173,14 @@ describe("listFolder", () => {
     const fetchImpl = vi.fn(async () => {
       throw new TypeError("fetch failed");
     });
-    const r = await listFolder("F1", "k", fetchImpl as unknown as typeof fetch);
+    const r = await listTree("F1", "k", fetchImpl as unknown as typeof fetch);
     expect(!r.ok && r.reason).toBe("network error");
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("retries 429 once", async () => {
     const fetchImpl = vi.fn(async () => new Response("", { status: 429 }));
-    const r = await listFolder("F1", "k", fetchImpl as unknown as typeof fetch);
+    const r = await listTree("F1", "k", fetchImpl as unknown as typeof fetch);
     expect(!r.ok && r.reason).toBe("HTTP 429");
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
@@ -191,30 +192,30 @@ describe("listFolder", () => {
           init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason));
         }),
     );
-    const r = await listFolder("F1", "k", fetchImpl as unknown as typeof fetch, 20);
+    const r = await listTree("F1", "k", fetchImpl as unknown as typeof fetch, 3, 20);
     expect(!r.ok && r.reason).toBe("timeout");
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("reports 'invalid response' for a malformed body", async () => {
-    const r = await listFolder("F1", "k", mockFetch({ files: "nope" }));
+    const r = await listTree("F1", "k", mockFetch({ files: "nope" }));
     expect(!r.ok && r.reason).toBe("invalid response");
-    const r2 = await listFolder("F1", "k", (async () => new Response("<html>", { status: 200 })) as unknown as typeof fetch);
+    const r2 = await listTree("F1", "k", (async () => new Response("<html>", { status: 200 })) as unknown as typeof fetch);
     expect(!r2.ok && r2.reason).toBe("invalid response");
   });
 
-  it("treats a missing files property as an empty list, but rejects non-array files and non-object bodies", async () => {
-    const r = await listFolder("F1", "k", mockFetch({}));
-    expect(r.ok && r.files).toEqual([]);
+  it("treats a missing files property as an empty list (an empty root, see below), but rejects non-array files and non-object bodies", async () => {
+    const r = await listTree("F1", "k", mockFetch({}));
+    expect(!r.ok && r.reason).toBe("empty listing");
     for (const body of [{ files: {} }, { files: null }, [], "text", 7, null]) {
-      const bad = await listFolder("F1", "k", mockFetch(body));
+      const bad = await listTree("F1", "k", mockFetch(body));
       expect(!bad.ok && bad.reason).toBe("invalid response");
     }
   });
 
   it("reports 'too many pages' when pagination never ends", async () => {
     const fetchImpl = vi.fn(async () => json({ files: [], nextPageToken: "more" }));
-    const r = await listFolder("F1", "k", fetchImpl as unknown as typeof fetch);
+    const r = await listTree("F1", "k", fetchImpl as unknown as typeof fetch);
     expect(!r.ok && r.reason).toBe("too many pages");
     expect(fetchImpl).toHaveBeenCalledTimes(50);
   });
@@ -228,7 +229,7 @@ describe("listFolder", () => {
       });
       return new Response(stream, { status: 200 });
     });
-    const r = await listFolder("F1", "k", fetchImpl as unknown as typeof fetch);
+    const r = await listTree("F1", "k", fetchImpl as unknown as typeof fetch);
     expect(!r.ok && r.reason).toBe("timeout");
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
@@ -244,7 +245,7 @@ describe("listFolder", () => {
       });
       return new Response(stream, { status: 200 });
     });
-    const r = await listFolder("F1", KEY, fetchImpl as unknown as typeof fetch);
+    const r = await listTree("F1", KEY, fetchImpl as unknown as typeof fetch);
     expect(r.ok).toBe(true);
     expect(calls).toBe(2);
     expect(JSON.stringify(warn.mock.calls)).not.toContain(KEY);
@@ -253,10 +254,8 @@ describe("listFolder", () => {
   it("never throws for a non-string folder ID", async () => {
     const spy = vi.fn();
     for (const id of [undefined, null, 42, {}]) {
-      const r = await listFolder(id as unknown as string, "k", spy as unknown as typeof fetch);
+      const r = await listTree(id as unknown as string, "k", spy as unknown as typeof fetch);
       expect(r).toEqual({ ok: false, folderUrl: folderUrl(""), reason: "no folder ID" });
-      const t = await listTree(id as unknown as string, "k", spy as unknown as typeof fetch);
-      expect(t.ok).toBe(false);
     }
     expect(spy).not.toHaveBeenCalled();
   });
@@ -265,9 +264,9 @@ describe("listFolder", () => {
     const urls: URL[] = [];
     const fetchImpl = (async (input: RequestInfo | URL) => {
       urls.push(new URL(String(input)));
-      return json({ files: [] });
+      return json({ files: [entry("a", "A")] });
     }) as unknown as typeof fetch;
-    await listFolder("a'b\\c", "k", fetchImpl);
+    await listTree("a'b\\c", "k", fetchImpl);
     expect(urls[0].searchParams.get("q")).toBe("'a\\'b\\\\c' in parents and trashed=false");
   });
 
@@ -281,14 +280,11 @@ describe("listFolder", () => {
       (async () => new Response(`${KEY}`, { status: 200 })) as unknown as typeof fetch,
     ];
     for (const fetchImpl of cases) {
-      const r = await listFolder("F1", KEY, fetchImpl);
+      const r = await listTree("F1", KEY, fetchImpl);
       expect(r.ok).toBe(false);
       expect(JSON.stringify(r)).not.toContain(KEY);
-      const t = await listTree("F1", KEY, fetchImpl);
-      expect(t.ok).toBe(false);
-      expect(JSON.stringify(t)).not.toContain(KEY);
     }
-    expect(warn).toHaveBeenCalledTimes(cases.length * 2);
+    expect(warn).toHaveBeenCalledTimes(cases.length);
     expect(JSON.stringify(warn.mock.calls)).not.toContain(KEY);
   });
 });
@@ -397,9 +393,9 @@ describe("listTree", () => {
 
   it("returns ok for a tree containing an empty subfolder whose response is {}", async () => {
     const fetchImpl = (async (input: RequestInfo | URL) =>
-      parentOf(input) === "R" ? json({ files: [entry("E", "empty", FOLDER)] }) : json({})) as unknown as typeof fetch;
+      parentOf(input) === "R" ? json({ files: [entry("E", "empty", FOLDER), entry("F", "file")] }) : json({})) as unknown as typeof fetch;
     const r = await listTree("R", "k", fetchImpl);
-    expect(r.ok && r.files.map((f) => f.id)).toEqual(["E"]);
+    expect(r.ok && r.files.map((f) => f.id).sort()).toEqual(["E", "F"]);
   });
 
   it("reports the failure of the first failing folder in listing order, not the first to finish", async () => {
@@ -465,6 +461,60 @@ describe("listTree", () => {
   });
 });
 
+describe("listTree: an empty root is a failure, not a fact", () => {
+  // files.list answers 200 with no files when link sharing is removed from a folder, so "nothing here" is
+  // far more likely a sharing change than the truth for a published root.
+  it("fails with 'empty listing' when the root lists nothing, and warns once", async () => {
+    const r = await listTree("ROOT", "k", mockFetch({ files: [] }));
+    expect(r).toEqual({ ok: false, folderUrl: folderUrl("ROOT"), reason: "empty listing" });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toBe('[drive] folder "ROOT" not listed: empty listing; falling back to a link');
+  });
+
+  it("fails when the tree holds only folders", async () => {
+    const tree: Record<string, Raw[]> = {
+      R: [entry("Y", "2026-2027", FOLDER)],
+      Y: [entry("M", "26 10 October", FOLDER)],
+      M: [],
+    };
+    const r = await listTree("R", "k", treeFetch(tree));
+    expect(!r.ok && r.reason).toBe("empty listing");
+  });
+
+  it("is ok when one file exists anywhere in the tree", async () => {
+    const tree: Record<string, Raw[]> = {
+      R: [entry("Y", "2026-2027", FOLDER)],
+      Y: [entry("M", "26 10 October", FOLDER)],
+      M: [entry("A", "AVCA Proposed Agenda 10.20.2026")],
+    };
+    const r = await listTree("R", "k", treeFetch(tree));
+    expect(r.ok && r.files.filter((f) => !f.isFolder).map((f) => f.id)).toEqual(["A"]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("listTree: Drive shortcuts", () => {
+  const SHORTCUT = "application/vnd.google-apps.shortcut";
+
+  it("skips a shortcut: it can point outside the published folders", async () => {
+    const tree: Record<string, Raw[]> = {
+      R: [entry("S", "Board contact list", SHORTCUT), entry("F", "Plan.pdf", "application/pdf"), entry("D", "Old", FOLDER)],
+      D: [entry("S2", "Shortcut to a folder", SHORTCUT), entry("G", "Older plan.pdf", "application/pdf")],
+    };
+    const log: string[] = [];
+    const r = await listTree("R", "k", treeFetch(tree, log));
+    if (!r.ok) throw new Error("expected ok");
+    expect(r.files.map((f) => f.id).sort()).toEqual(["D", "F", "G"]);
+    expect(JSON.stringify(r.files)).not.toContain("Board contact list");
+    expect(log.sort()).toEqual(["D", "R"]);
+  });
+
+  it("does not count a shortcut as a file: a root holding only shortcuts is an empty listing", async () => {
+    const r = await listTree("R", "k", mockFetch({ files: [entry("S", "Elsewhere", SHORTCUT)] }));
+    expect(!r.ok && r.reason).toBe("empty listing");
+  });
+});
+
 describe("loadAllFolders", () => {
   const settings = {
     drive: {
@@ -493,7 +543,7 @@ describe("loadAllFolders", () => {
 
   it("degrades per root: a blank ID fails only that root", async () => {
     const s = { drive: { ...settings.drive, letters: "" } } as unknown as Settings;
-    const r = await loadAllFolders(s, "k", mockFetch({ files: [] }));
+    const r = await loadAllFolders(s, "k", mockFetch({ files: [entry("x", "A")] }));
     expect(!r.letters.ok && r.letters.reason).toBe("no folder ID");
     expect(r.bylaws.ok).toBe(true);
   });
