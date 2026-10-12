@@ -1,7 +1,7 @@
-# Builds the site and deploys it to GitHub Pages: on push to main, daily at 10:00 UTC (so "Next meeting"
-# rolls over), on manual dispatch, and on repository_dispatch "calendar-updated".
-# The deploy is skipped when the build is byte-identical to the live site (compared via build-hash.txt),
-# and a build in which Google was unreachable fails instead of replacing a healthy site
+# Builds the site and deploys it to GitHub Pages. Triggers: push to main, daily 10:00 UTC cron, manual
+# dispatch, and repository_dispatch "calendar-updated" / "daily-rebuild" (Apps Script, ops/apps-script;
+# a second clock in case GitHub disables the cron). Skips the deploy when the build matches the live
+# site (build-hash.txt). A build where Google was unreachable fails instead of replacing a healthy site
 # (unless allow_degraded is ticked on a manual run, or nothing is deployed yet).
 name: Deploy
 
@@ -17,7 +17,7 @@ on:
         type: boolean
         default: false
   repository_dispatch:
-    types: [calendar-updated]
+    types: [calendar-updated, daily-rebuild]
 
 permissions:
   contents: read
@@ -56,7 +56,8 @@ jobs:
       - name: Fetch the deployed build hash
         id: deployed
         run: |
-          status=$(curl -sS --globoff --max-time 20 -o "$RUNNER_TEMP/deployed-hash.txt" -w '%{http_code}' "$BASE_URL/build-hash.txt" || true)
+          # Best-effort cache busting: Pages may serve a stale copy for a few minutes after a deploy.
+          status=$(curl -sS --globoff --max-time 20 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-hash.txt" -w '%{http_code}' "$BASE_URL/build-hash.txt?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" || true)
           echo "status=${status:-000}" >> "$GITHUB_OUTPUT"
         env:
           BASE_URL: ${{ steps.pages.outputs.base_url }}

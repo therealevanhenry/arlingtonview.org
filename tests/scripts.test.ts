@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -220,5 +220,38 @@ describe("deploy-decision.sh", () => {
 
   it("only the exact string true enables allow_degraded", () => {
     expect(decide("200", `${OTHER}\n`, { DEGRADED: "true", ALLOW_DEGRADED: "1" }).code).toBe(1);
+  });
+});
+
+describe("check-reproducible.sh", () => {
+  // A fake checkout: the real script, a stub dist-hash.sh, and a stub npx on PATH. Never builds anything.
+  const check = (digests: [string, string]) => {
+    mkdirSync(join(tmp, "scripts"));
+    mkdirSync(join(tmp, "bin"));
+    copyFileSync(join(scripts, "check-reproducible.sh"), join(tmp, "scripts/check-reproducible.sh"));
+    writeFileSync(join(tmp, "calls"), "0");
+    writeFileSync(
+      join(tmp, "scripts/dist-hash.sh"),
+      `#!/usr/bin/env bash\nn=$(( $(cat "${tmp}/calls") + 1 )); echo $n > "${tmp}/calls"\nif [ $n = 1 ]; then echo ${digests[0]}; else echo ${digests[1]}; fi\n`,
+    );
+    writeFileSync(join(tmp, "bin/npx"), "#!/usr/bin/env bash\nexit 0\n");
+    for (const f of ["scripts/dist-hash.sh", "bin/npx"]) chmodSync(join(tmp, f), 0o755);
+    const r = spawnSync("bash", [join(tmp, "scripts/check-reproducible.sh")], {
+      encoding: "utf8",
+      env: { PATH: `${join(tmp, "bin")}:${process.env.PATH ?? ""}` },
+    });
+    return { code: r.status, out: r.stdout, err: r.stderr };
+  };
+
+  it("passes when both digests match", () => {
+    const r = check(["aaa", "aaa"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("reproducible: aaa");
+  });
+
+  it("fails and names both digests when they differ", () => {
+    const r = check(["aaa", "bbb"]);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("aaa vs bbb");
   });
 });

@@ -1,6 +1,6 @@
 # Calendar update trigger
 
-This script tells GitHub to rebuild the AVCA website whenever the Arlington View Civic Association (AVCA) meeting calendar changes. It runs in Google Apps Script, under the Google Workspace account that owns the AVCA meeting calendar.
+This script tells GitHub to rebuild the AVCA website whenever the Arlington View Civic Association (AVCA) meeting calendar changes, and also once a day and (for the external link check) once a week. It runs in Google Apps Script, under the Google Workspace account that owns the AVCA meeting calendar.
 
 You only need to do this setup once, and again whenever the GitHub token expires. The token is a GitHub personal access token (PAT): a password-like string that lets the script act on one repository on your behalf, without your GitHub password.
 
@@ -8,7 +8,7 @@ You only need to do this setup once, and again whenever the GitHub token expires
 
 PAT expires: ____ (YYYY-MM-DD; set a calendar reminder two weeks before)
 
-Fill in the date when you create the token in Part 1. If the token expires, calendar changes stop updating the website until you make a new token and replace it (see "Replacing an expired token" below).
+Fill in the date when you create the token in Part 1. If the token expires, the website stops updating (calendar changes, the daily rebuild, the weekly link check) until you make a new token and replace it (see "Replacing an expired token" below).
 
 ## Part 1: Create the GitHub token
 
@@ -45,10 +45,27 @@ Create a new token as in Part 1, then open the script's Project Settings, edit t
 7. Click Save.
 8. Google asks you to authorize the script. Choose the account, click Advanced, then Go to the project, then Allow. This is expected: the script is yours and has not been through Google's public review.
 
+Then add the two time-driven triggers, using Add Trigger again each time:
+
+1. Daily rebuild. First open Project Settings and set the time zone to America/New_York. Function: `onDailyTick`. Event source: Time-driven. Type: Day timer. Time of day: 5am to 6am.
+2. Weekly link check. Function: `onWeeklyLinkCheck`. Event source: Time-driven. Type: Week timer. Day: Every Monday. Time of day: 6am to 7am.
+
+For all three triggers, click Failure notification settings and choose "Notify me immediately", so Google emails you whenever the script fails.
+
+## Why there are two clocks
+
+The website is rebuilt every morning so "Next meeting" rolls over to the next date. GitHub has its own daily schedule for that, but its documentation says: "In a public repository, scheduled workflows are automatically disabled when no repository activity has occurred in 60 days." (https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows). This repository is designed to go months without a commit, because the board edits the Calendar and Drive, not the repository. The Apps Script daily trigger is a second, independent clock that is not subject to that rule. If both fire, nothing is lost: the site is only republished when its content changed.
+
 ## Part 4: Test it
 
 1. Open the AVCA meeting calendar and edit an event, e.g. change the description, then save.
 2. Wait a few minutes.
 3. In the GitHub repository, open the Actions tab. A new `deploy.yml` run should appear.
 
-If no run appears, in Apps Script open Executions in the left menu and look at the latest entry. A log line "GitHub dispatch response code: 204" means GitHub accepted the request. A code of 401 or 403 usually means the token is wrong or expired. A code of 404 usually means the token cannot access the repository. An error saying GITHUB_TOKEN is not set means Part 2, step 5 was missed.
+To check the token without touching the calendar, open the script, choose `testDispatch` in the function menu at the top, and click Run. A `deploy.yml` run should appear in the Actions tab within a minute. If GitHub rejects the request, the run fails and shows the HTTP status.
+
+If no run appears, in Apps Script open Executions in the left menu and look at the latest entry. A log line ending "response code: 204" means GitHub accepted the request. A code of 401 or 403 usually means the token is wrong or expired. A code of 404 usually means the token cannot access the repository. An error saying GITHUB_TOKEN is not set means Part 2, step 5 was missed.
+
+## When the token expires
+
+Google sends you a failure email from Apps Script ("Summary of failures for Google Apps Script") the next time a trigger runs, and the site stops updating until you replace the token (see "Replacing an expired token"). Run `testDispatch` afterwards to confirm.
