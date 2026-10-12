@@ -18,7 +18,7 @@ Fill in the date when you create the token in Part 1. If the token expires, the 
 4. Name it something clear, e.g. "AVCA calendar trigger".
 5. Set Expiration to 1 year.
 6. Under Repository access, choose Only select repositories, then pick `arlingtonview.org`.
-7. Under Permissions, then Repository permissions, set Contents to Read and write.
+7. Under Permissions, then Repository permissions, set Contents to Read and write (needed to start a rebuild) and Actions to Read and write (needed to check that the workflows are switched on, and to switch them back on).
 8. Click Generate token and copy the token. GitHub shows it only once.
 9. Write the expiry date on the "PAT expires" line above and set the calendar reminder.
 
@@ -47,14 +47,16 @@ Create a new token as in Part 1, then open the script's Project Settings, edit t
 
 Then add the two time-driven triggers, using Add Trigger again each time:
 
-1. Daily rebuild. First open Project Settings and set the time zone to America/New_York. Function: `onDailyTick`. Event source: Time-driven. Type: Day timer. Time of day: 5am to 6am.
-2. Weekly link check. Function: `onWeeklyLinkCheck`. Event source: Time-driven. Type: Week timer. Day: Every Monday. Time of day: 6am to 7am.
+1. Daily rebuild. First open Project Settings and set the time zone to America/New_York. Function: `onDailyTick`. Event source: Time-driven. Type: Day timer. Time of day: 7am to 8am.
+2. Weekly link check. Function: `onWeeklyLinkCheck`. Event source: Time-driven. Type: Week timer. Day: Every Thursday. Time of day: 7am to 8am.
 
 For all three triggers, click Failure notification settings and choose "Notify me immediately", so Google emails you whenever the script fails.
 
 ## Why there are two clocks
 
-The website is rebuilt every morning so "Next meeting" rolls over to the next date. GitHub has its own daily schedule for that, but its documentation says: "In a public repository, scheduled workflows are automatically disabled when no repository activity has occurred in 60 days." (https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows). This repository is designed to go months without a commit, because the board edits the Calendar and Drive, not the repository. The Apps Script daily trigger is a second, independent clock that is not subject to that rule. If both fire, nothing is lost: the site is only republished when its content changed.
+The website is rebuilt every morning so "Next meeting" rolls over to the next date. GitHub has its own daily schedule for that (10:00 UTC, so the 7 to 8 am trigger above always runs after it), but its documentation says: "In a public repository, scheduled workflows are automatically disabled when no repository activity has occurred in 60 days." (https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows). This repository is designed to go months without a commit, because the board edits the Calendar and Drive, not the repository, so GitHub may well disable its scheduled workflows.
+
+A disabled workflow ignores every trigger, including the ones this script sends. So before each rebuild request, the script checks whether the workflow is active and, if not, switches it back on ("Enables a workflow and sets the state of the workflow to active", https://docs.github.com/en/rest/actions/workflows#enable-a-workflow). If that ever fails, the script stops with an error and Google emails you. If both clocks fire on the same day, nothing is lost: the site is only republished when its content changed. The weekly link check runs on Thursday, GitHub's own on Monday, so they do not overlap.
 
 ## Part 4: Test it
 
