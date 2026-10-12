@@ -1,0 +1,131 @@
+# Builds the site and deploys it to GitHub Pages: on push to main, daily at 10:00 UTC (so "Next meeting"
+# rolls over), on manual dispatch, and on repository_dispatch "calendar-updated".
+# The deploy is skipped when the build is byte-identical to the live site (compared via build-hash.txt),
+# and a build in which Google was unreachable fails instead of replacing a healthy site
+# (unless allow_degraded is ticked on a manual run, or nothing is deployed yet).
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+    inputs:
+      allow_degraded:
+        description: Deploy even if Google Drive or Calendar could not be reached during the build
+        type: boolean
+        default: false
+  repository_dispatch:
+    types: [calendar-updated]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    # Manual runs can pick any branch; only main may deploy.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v6
+
+      # What is live right now (the github.io preview before DNS cutover, the apex after).
+      # Any failure just means "different"; scripts/deploy-decision.sh validates the body.
+      - name: Fetch the deployed build hash
+        id: deployed
+        run: |
+          status=$(curl -sS --globoff --max-time 20 -o "$RUNNER_TEMP/deployed-hash.txt" -w '%{http_code}' "$BASE_URL/build-hash.txt" || true)
+          echo "status=${status:-000}" >> "$GITHUB_OUTPUT"
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
+
+      # The only step that sees the Drive key. The loaders log fixed reason strings, never URLs or the key.
+      - name: Build
+        run: |
+          set -euo pipefail
+          args=(--site "$ORIGIN")
+          if [ -n "$BASE_PATH" ]; then args+=(--base "$BASE_PATH"); fi
+          npx astro build "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/build.log"
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ORIGIN: ${{ steps.pages.outputs.origin }}
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+
+      # Live calendar and Drive text is checked for a leaked meeting link only here.
+      - name: Assert on the built site
+        run: npm run test:dist
+
+      - name: Check build health
+        id: health
+        run: |
+          rc=0
+          scripts/build-health.sh "$RUNNER_TEMP/build.log" || rc=$?
+          case "$rc" in
+            0) echo "degraded=false" >> "$GITHUB_OUTPUT" ;;
+            1) echo "degraded=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$rc" ;;
+          esac
+
+      - name: Hash the build
+        id: hash
+        run: echo "value=$(scripts/dist-hash.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to deploy
+        id: decide
+        run: scripts/deploy-decision.sh
+        env:
+          NEW_HASH: ${{ steps.hash.outputs.value }}
+          DEPLOYED_STATUS: ${{ steps.deployed.outputs.status }}
+          DEPLOYED_FILE: ${{ runner.temp }}/deployed-hash.txt
+          DEGRADED: ${{ steps.health.outputs.degraded }}
+          ALLOW_DEGRADED: ${{ inputs.allow_degraded == true }}
+
+      - name: Record the build hash
+        if: steps.decide.outputs.deploy == 'true'
+        run: echo "$NEW_HASH" > dist/build-hash.txt
+        env:
+          NEW_HASH: ${{ steps.hash.outputs.value }}
+
+      - name: Upload the Pages artifact
+        if: steps.decide.outputs.deploy == 'true'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist/
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
