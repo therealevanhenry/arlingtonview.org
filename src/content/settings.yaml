@@ -1,0 +1,16 @@
+siteName: Arlington View Civic Association
+shortName: AVCA
+siteUrl: https://arlingtonview.org
+contactEmail: president@arlingtonview.org
+calendarId: "c_1a4eb9b26454828fe282cee5a45157d3c69bc23e03bf9a1646bbb02e0386380e@group.calendar.google.com"
+meetingRule: "Meetings are held on the last Tuesday of the month from 7:00 to 8:30 pm, unless otherwise noted."
+virtualLinkNote: "The virtual meeting link is emailed to members the day before each meeting. Email us if you need it."
+joinFormUrl: ""            # no form at launch (owner decision); residents email the president
+drive:
+  bylaws: "1i3Z0GmBBqkp4tc_B8ElfOeu0qfiRg4sH"
+  bylawsCurrentFileId: "1a_Qt8tUBox_BUH8Yqjem4HPR1jCeMBjq"
+  meetings: "19POeuA29OJnWSE4oLLrT3bXyaVsmB298"        # Minutes & Agendas: year folders -> month folders
+  presentations: "1WLzj94bJWrljj-UoFEoJeVO1Bew-VAtQ"
+  letters: "1SqguA937FovXM0znK5BXLKfUgwEludLd"          # Official letters: year folders
+  neighborhoodPlan: "1bxK3Ue-RqY3OdIMEZmArJGcaOf9vvVcY"
+  history: "1SsZ8H7ORPobEaxxzFZOT8OlWuTbcC9Zi"          # linked from the History page only

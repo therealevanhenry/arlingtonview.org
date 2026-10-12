@@ -1,0 +1,51 @@
+groups:
+  - title: Report and get help
+    links:
+      - label: Report a Problem
+        url: https://www.arlingtonva.us/Government/Topics/Report-Problem
+      - label: Police non-emergency
+        url: https://www.arlingtonva.us/Government/Departments/Police-Department
+        note: 703-558-2222
+      - label: Water and sewer emergency
+        url: https://www.arlingtonva.us/Government/Programs/Water-Utilities/Water/Water-Main-Breaks
+        note: 703-228-6555
+      - label: Arlington Alert
+        url: https://www.arlingtonva.us/Government/Departments/PSCEM/Emergency-Preparedness/Arlington-Alert
+  - title: Services
+    links:
+      - label: Trash and recycling
+        url: https://www.arlingtonva.us/Government/Programs/Recycling-and-Trash
+      - label: Unwanted medications
+        url: https://www.arlingtonva.us/Government/Programs/Recycling-and-Trash/Household-Hazardous-Materials-HHM
+      - label: ART 74 bus
+        url: https://www.arlingtontransit.com/maps-schedules/art-74/
+      - label: Carver Community Center
+        url: https://www.arlingtonva.us/Government/Departments/Parks-Recreation/Locations/Indoor-Facilities/Carver-Community-Center
+      - label: Housing help
+        url: https://www.arlingtonva.us/Government/Programs/Housing/Get-Help
+      - label: Tax relief
+        url: https://www.arlingtonva.us/Residents/Taxes/Tax-Relief
+      - label: Schools
+        url: https://www.apsva.us/
+  - title: County government
+    links:
+      - label: County Board
+        url: https://www.arlingtonva.us/Government/County-Board
+      - label: Public meeting calendar
+        url: https://www.arlingtonva.us/Government/Topics/Meeting-Calendar
+      - label: A-Z index
+        url: https://www.arlingtonva.us/A-Z-Index
+      - label: Welcome Kit
+        url: https://www.arlingtonva.us/Government/Topics/Arlington-Welcome-Kit
+      - label: Building and permits
+        url: https://www.arlingtonva.us/Government/Programs/Building
+  - title: Columbia Pike and civic
+    links:
+      - label: Columbia Pike Forward
+        url: https://www.arlingtonva.us/Government/Projects/Project-Types/Transportation-Projects/Columbia-Pike-Forward
+      - label: Columbia Pike Partnership
+        url: https://www.columbia-pike.org/
+      - label: Arlington County Civic Federation
+        url: https://www.civfed.org/
+      - label: Comprehensive Plan
+        url: https://www.arlingtonva.us/Government/Projects/Plans-Studies/Comprehensive-Plan

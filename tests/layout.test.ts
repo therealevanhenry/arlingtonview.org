@@ -165,4 +165,13 @@ describe("Base", () => {
     expect(html).not.toContain("target=");
     expect(html).toContain("September 30, 2026");
   });
+
+  it("takes the footer contact email from the site settings", async () => {
+    const html = await container.renderToString(Base, {
+      request: at("/"),
+      props: { title: "Home" },
+      slots: { default: "<h1>Arlington View Civic Association</h1>" },
+    });
+    expect(html).toContain('href="mailto:president@arlingtonview.org"');
+  });
 });

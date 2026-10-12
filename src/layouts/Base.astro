@@ -6,6 +6,7 @@ import sourceSans400 from "@fontsource/source-sans-3/files/source-sans-3-latin-4
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import { stripBase, withBase } from "../lib/paths";
+import { getSettings } from "../lib/settings";
 
 interface Props {
   /** Page title. The home page ignores it and uses the organization name alone. */
@@ -18,8 +19,7 @@ interface Props {
 const SITE_NAME = "Arlington View Civic Association";
 const DEFAULT_DESCRIPTION =
   "Arlington View Civic Association (AVCA): meeting dates, minutes, bylaws, and county resources for the Arlington View neighborhood of Arlington, Virginia.";
-// Task 2 rewires this to the site settings.
-const CONTACT_EMAIL = "president@arlingtonview.org";
+const { contactEmail } = await getSettings();
 
 const { title, description = DEFAULT_DESCRIPTION, lastUpdated } = Astro.props;
 
@@ -50,6 +50,6 @@ const canonical = Astro.site
     <main id="main" class="site-main container">
       <slot />
     </main>
-    <Footer contactEmail={CONTACT_EMAIL} lastUpdated={lastUpdated} />
+    <Footer contactEmail={contactEmail} lastUpdated={lastUpdated} />
   </body>
 </html>
