@@ -8,6 +8,7 @@ import {
   groupByYear,
   pastRows,
   recentFiles,
+  visibleFiles,
   type ArchiveRow,
 } from "../src/lib/archive";
 import type { Meeting } from "../src/lib/calendar";
@@ -384,5 +385,28 @@ describe("recentFiles", () => {
     const result = recentFiles([ok([folder, hidden, a]), failed, ok([b, c])], 2);
     expect(result).toEqual([b, c]);
     expect(result.some((f) => f.isFolder)).toBe(false);
+  });
+});
+
+describe("visibleFiles and grouping exclusions", () => {
+  const folder = () => file("2026-2027", [], { isFolder: true });
+  const hidden = (path: string[] = []) => file("(OLD) AVCA 2025 Feb mtg mins", path);
+
+  it("visibleFiles drops folders and hidden files only", () => {
+    const a = file("Deck 2026-01-05");
+    const b = file("Other", ["2026-2027"]);
+    expect(visibleFiles([folder(), a, hidden(), b])).toEqual([a, b]);
+  });
+
+  it("groupByYear returns neither folders nor hidden files, and omits empty groups", () => {
+    const keep = file("Deck 2026-01-05");
+    const groups = groupByYear([folder(), hidden(), keep, { ...hidden(), meetingDate: "2019-01-01" }]);
+    expect(groups).toEqual([{ year: "2026", files: [keep] }]);
+  });
+
+  it("groupByPath returns neither folders nor hidden files, and omits empty groups", () => {
+    const keep = file("Cur", ["2026-2027"]);
+    const groups = groupByPath([folder(), hidden(["2025-2026"]), keep, hidden()]);
+    expect(groups).toEqual([{ label: "2026-2027", files: [keep] }]);
   });
 });

@@ -203,10 +203,13 @@ export function agendaFor(meeting: Meeting, rows: ArchiveRow[]): string | undefi
   return rows.find((r) => r.date === date)?.agenda?.url ?? meeting.agendaUrl;
 }
 
+/** The one definition of "visible": not a folder entry and not an `(OLD)` file. */
+export function visibleFiles(files: DriveFile[]): DriveFile[] {
+  return files.filter((f) => !f.isFolder && !HIDDEN.test(f.name));
+}
+
 export function recentFiles(folders: FolderResult[], n: number): DriveFile[] {
-  return folders
-    .flatMap((f) => (f.ok ? f.files : []))
-    .filter((f) => !f.isFolder && !HIDDEN.test(f.name))
+  return visibleFiles(folders.flatMap((f) => (f.ok ? f.files : [])))
     .sort((a, b) => Date.parse(b.modifiedTime) - Date.parse(a.modifiedTime) || compareText(a.id, b.id))
     .slice(0, n);
 }
@@ -216,7 +219,7 @@ const newestFirst = (a: DriveFile, b: DriveFile): number =>
 
 export function groupByYear(files: DriveFile[]): Array<{ year: string; files: DriveFile[] }> {
   const groups = new Map<string, DriveFile[]>();
-  for (const f of files) {
+  for (const f of visibleFiles(files)) {
     const year = f.meetingDate?.slice(0, 4) ?? "Undated";
     groups.set(year, [...(groups.get(year) ?? []), f]);
   }
@@ -229,7 +232,7 @@ export function groupByYear(files: DriveFile[]): Array<{ year: string; files: Dr
 /** Groups by the first `depth` path segments; top-level files (label "") first, then labels descending. */
 export function groupByPath(files: DriveFile[], depth = 1): Array<{ label: string; files: DriveFile[] }> {
   const groups = new Map<string, DriveFile[]>();
-  for (const f of files) {
+  for (const f of visibleFiles(files)) {
     const label = f.path.slice(0, depth).join("/");
     groups.set(label, [...(groups.get(label) ?? []), f]);
   }
