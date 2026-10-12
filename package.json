@@ -13,7 +13,10 @@
     "check": "astro check",
     "test": "vitest run",
     "test:build": "npm run build && vitest run --config vitest.build.config.ts",
-    "test:dist": "vitest run --config vitest.build.config.ts"
+    "test:dist": "vitest run --config vitest.build.config.ts",
+    "preview:fixtures": "vitest run --config tests/preview/vitest.config.ts",
+    "test:browsers": "OFFLINE=1 npm run build && npm run preview:fixtures && playwright test --project=webkit-desktop --project=webkit-phone",
+    "test:browsers:all": "OFFLINE=1 npm run build && npm run preview:fixtures && playwright test"
   },
   "dependencies": {
     "@fontsource/eb-garamond": "5.3.0",
@@ -24,6 +27,8 @@
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.64.0",
     "@types/node": "24.19.2",
     "typescript": "6.0.3",
     "vitest": "5.0.3"
