@@ -1,12 +1,14 @@
 /** Rules the four workflow files must keep. They are read as YAML at test time; nothing here runs a workflow. */
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 const DIR = ".github/workflows";
-type Step = { uses?: string; with?: Record<string, unknown> };
-type Job = { "runs-on"?: string; steps?: Step[] };
+type Step = { id?: string; name?: string; run?: string; if?: string; env?: Record<string, string>; uses?: string; with?: Record<string, unknown> };
+type Job = { "runs-on"?: string; needs?: string; if?: string; outputs?: Record<string, string>; steps?: Step[] };
 type Workflow = { on: Record<string, unknown>; jobs: Record<string, Job> };
 const files = readdirSync(DIR).filter((f) => f.endsWith(".yml")).sort();
 const workflows = files.map((file) => ({ file, text: readFileSync(join(DIR, file), "utf8"), yaml: parse(readFileSync(join(DIR, file), "utf8")) as Workflow }));
@@ -63,5 +65,158 @@ describe("workflow files", () => {
     const steps = Object.values(one("links.yml").yaml.jobs).flatMap((j) => j.steps ?? []);
     const lychee = steps.find((s) => s.uses?.startsWith("lycheeverse/lychee-action@"));
     expect(lychee?.with?.lycheeVersion).toMatch(/^v\d+\.\d+\.\d+$/);
+  });
+});
+
+/**
+ * The shell written inside deploy.yml, run as written. The scripts it calls have their own tests
+ * (tests/scripts.test.ts); this covers the glue between them: that each step turns its script's exit
+ * code into the right output, and that the outputs reach the decision. GitHub's expressions cannot be
+ * evaluated here, so the test checks that the env mapping is the expected one and then applies it.
+ */
+describe("deploy.yml: the health, drop, and decide steps, run as GitHub runs them", () => {
+  const build = one("deploy.yml").yaml.jobs.build;
+  const step = (id: string): Step => {
+    const found = (build.steps ?? []).find((s) => s.id === id);
+    if (!found?.run) throw new Error(`deploy.yml: no run step with id "${id}"`);
+    return found;
+  };
+  const NEW = "a".repeat(64);
+  const OLD = "b".repeat(64);
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "avca-workflow-"));
+    symlinkSync(resolve("scripts"), join(dir, "scripts"));
+    mkdirSync(join(dir, "dist"));
+    mkdirSync(join(dir, "tmp"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  /** Runs one step's script the way a runner does (`bash -eo pipefail`), and returns its outputs. */
+  function runStep(id: string, env: Record<string, string> = {}) {
+    const out = join(dir, `${id}.out`);
+    writeFileSync(out, "");
+    const r = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", step(id).run as string], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { PATH: process.env.PATH ?? "", RUNNER_TEMP: join(dir, "tmp"), GITHUB_OUTPUT: out, ...env },
+    });
+    const outputs = Object.fromEntries(readFileSync(out, "utf8").split("\n").filter(Boolean).map((l) => l.split("=") as [string, string]));
+    return { code: r.status, stdout: r.stdout, outputs };
+  }
+
+  /** One whole decision: a build log, the two build-meta files, the live hash, and the checkbox. */
+  function decide(opts: { health: string | null; live?: Record<string, number>; fresh: Record<string, number>; liveHash?: string; allow?: boolean }) {
+    writeFileSync(join(dir, "tmp/build.log"), opts.health === null ? "12:00 [build] done\n" : `12:00 [build] start\n[site-data] health: ${opts.health}\n`);
+    writeFileSync(join(dir, "dist/build-meta.json"), JSON.stringify({ driveFileCounts: opts.fresh }));
+    if (opts.live) writeFileSync(join(dir, "tmp/deployed-meta.json"), JSON.stringify({ driveFileCounts: opts.live }));
+    if (opts.liveHash) writeFileSync(join(dir, "tmp/deployed-hash.txt"), `${opts.liveHash}\n`);
+    const health = runStep("health");
+    if (health.code !== 0) return { failedAt: "health", health };
+    const drop = runStep("drop");
+    if (drop.code !== 0) return { failedAt: "drop", health, drop };
+    const decision = runStep("decide", {
+      NEW_HASH: NEW,
+      DEPLOYED_STATUS: opts.liveHash ? "200" : "404",
+      DEPLOYED_FILE: join(dir, "tmp/deployed-hash.txt"),
+      DEGRADED: health.outputs.degraded ?? "",
+      DRIVE_DROP: drop.outputs.dropped ?? "",
+      ALLOW_DEGRADED: String(opts.allow === true),
+    });
+    return { health, drop, decision };
+  }
+  const FIVE = { bylaws: 6, meetings: 40, presentations: 9, letters: 5, neighborhoodPlan: 4 };
+
+  it("wires the two checks into the decision exactly as the test applies them", () => {
+    expect(step("decide").env).toMatchObject({
+      DEGRADED: "${{ steps.health.outputs.degraded }}",
+      DRIVE_DROP: "${{ steps.drop.outputs.dropped }}",
+      ALLOW_DEGRADED: "${{ inputs.allow_degraded == true }}",
+    });
+    expect(step("drop").run).toContain('scripts/drive-drop.sh "$RUNNER_TEMP/deployed-meta.json" dist/build-meta.json');
+    expect(step("deployed").run).toContain('-o "$RUNNER_TEMP/deployed-meta.json"');
+    expect(step("deployed").run).toContain('-o "$RUNNER_TEMP/deployed-hash.txt"');
+    // The record and upload steps, and the deploy job, hang on the decision alone.
+    const gated = (build.steps ?? []).filter((s) => s.if !== undefined).map((s) => s.if);
+    expect(gated).toEqual(["steps.decide.outputs.deploy == 'true'", "steps.decide.outputs.deploy == 'true'"]);
+    expect(build.outputs).toEqual({ deploy: "${{ steps.decide.outputs.deploy }}" });
+    expect(one("deploy.yml").yaml.jobs.deploy).toMatchObject({ needs: "build", if: "needs.build.outputs.deploy == 'true'" });
+    expect(build).toMatchObject({ needs: "tip", if: "needs.tip.outputs.current == 'true'" });
+  });
+
+  it("healthy and changed: deploys", () => {
+    const r = decide({ health: "ok", live: FIVE, fresh: FIVE, liveHash: OLD });
+    expect(r.health.outputs).toEqual({ degraded: "false" });
+    expect(r.drop?.outputs).toEqual({ dropped: "false" });
+    expect(r.decision?.outputs).toEqual({ deploy: "true", reason: "changed" });
+  });
+
+  it("healthy and unchanged: skips, green", () => {
+    const r = decide({ health: "ok", live: FIVE, fresh: FIVE, liveHash: NEW });
+    expect(r.decision?.code).toBe(0);
+    expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "unchanged" });
+  });
+
+  it("no key, nothing listed on the live site: warns and deploys", () => {
+    const r = decide({ health: "unconfigured (no API key)", fresh: {} });
+    expect(r.health.stdout).toContain("::warning::");
+    expect(r.health.stdout).toContain("no API key");
+    expect(r.health.outputs).toEqual({ degraded: "false" });
+    expect(r.decision?.outputs).toEqual({ deploy: "true", reason: "changed" });
+  });
+
+  it("no key, but the live site lists files: the missing roots are a drop, and the run fails", () => {
+    const r = decide({ health: "unconfigured (no API key)", live: FIVE, fresh: {}, liveHash: OLD });
+    expect(r.drop?.outputs).toEqual({ dropped: "true" });
+    expect(r.drop?.stdout).toContain('::warning::drive-drop: "meetings" listed 40 files on the live site and is not listed in this build');
+    expect(r.decision?.code).toBe(1);
+    expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "degraded-blocked" });
+  });
+
+  it.each([
+    ["a Drive HTTP error", "degraded (drive meetings: HTTP 403)", { bylaws: 6, presentations: 9, letters: 5, neighborhoodPlan: 4 }],
+    ["an empty root", "degraded (drive letters: empty listing)", { bylaws: 6, meetings: 40, presentations: 9, neighborhoodPlan: 4 }],
+    ["a calendar failure", "degraded (calendar: HTTP 503)", FIVE],
+  ])("%s: fails, even on a first deploy (404) and even when identical", (_name, health, fresh) => {
+    for (const liveHash of [undefined, OLD, NEW]) {
+      const r = decide({ health, live: liveHash ? FIVE : undefined, fresh, liveHash });
+      expect(r.health.outputs).toEqual({ degraded: "true" });
+      expect(r.decision?.code).toBe(1);
+      expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "degraded-blocked" });
+    }
+  });
+
+  it("a root that lost more than half its files: healthy by the log, still fails", () => {
+    const r = decide({ health: "ok", live: FIVE, fresh: { ...FIVE, meetings: 12 }, liveHash: OLD });
+    expect(r.health.outputs).toEqual({ degraded: "false" });
+    expect(r.drop?.outputs).toEqual({ dropped: "true" });
+    expect(r.decision?.code).toBe(1);
+    expect(r.decision?.stdout).toContain("far fewer files");
+  });
+
+  it("allow_degraded lets a degraded build or a drop through, with a warning", () => {
+    const degraded = decide({ health: "degraded (drive meetings: timeout)", live: FIVE, fresh: FIVE, liveHash: OLD, allow: true });
+    expect(degraded.decision?.outputs).toEqual({ deploy: "true", reason: "degraded-allowed" });
+    const dropped = decide({ health: "ok", live: FIVE, fresh: { ...FIVE, meetings: 12 }, liveHash: OLD, allow: true });
+    expect(dropped.decision?.outputs).toEqual({ deploy: "true", reason: "degraded-allowed" });
+    expect(dropped.decision?.stdout).toContain("::warning::");
+  });
+
+  it("a missing or repeated health line fails at the health step, before any decision, whatever the checkbox says", () => {
+    for (const health of [null, "ok\n[site-data] health: ok"]) {
+      const r = decide({ health, live: FIVE, fresh: FIVE, liveHash: OLD, allow: true });
+      expect(r.failedAt).toBe("health");
+      expect(r.health.code).toBe(2);
+      expect(r.health.outputs).toEqual({});
+      expect(r.health.stdout).toContain("::error::");
+    }
+  });
+
+  it("a build without build-meta.json fails at the drop step", () => {
+    writeFileSync(join(dir, "tmp/build.log"), "[site-data] health: ok\n");
+    expect(runStep("health").code).toBe(0);
+    const drop = runStep("drop");
+    expect(drop.code).toBe(2);
+    expect(drop.outputs).toEqual({});
   });
 });
