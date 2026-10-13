@@ -141,11 +141,17 @@ esac
     return bin;
   }
 
+  const metaJson = (files: Record<string, number>, meetings?: number) =>
+    JSON.stringify({ driveFileCounts: files, ...(meetings === undefined ? {} : { meetingCount: meetings }) });
+
   /** One whole decision: a build log, the new build-meta.json, what the live site answers, and the checkbox. */
   function decide(opts: {
     health: string | null;
     /** The live site's file counts (HTTP 200). Omit, with `meta` unset, for a live site without the file (HTTP 404). */
     live?: Record<string, number>;
+    /** The live site's and the new build's meetingCount; omitted means the calendar was not read. */
+    liveMeetings?: number;
+    freshMeetings?: number;
     /** Overrides the live build-meta.json answer: [status, body]. */
     meta?: [string, string?];
     fresh: Record<string, number>;
@@ -153,21 +159,21 @@ esac
     allow?: boolean;
   }) {
     writeFileSync(join(dir, "tmp/build.log"), opts.health === null ? "12:00 [build] done\n" : `12:00 [build] start\n[site-data] health: ${opts.health}\n`);
-    writeFileSync(join(dir, "dist/build-meta.json"), JSON.stringify({ driveFileCounts: opts.fresh }));
+    writeFileSync(join(dir, "dist/build-meta.json"), metaJson(opts.fresh, opts.freshMeetings));
     const bin = fakeCurl({
       hash: opts.liveHash ? ["200", `${opts.liveHash}\n`] : undefined,
-      meta: opts.meta ?? (opts.live ? ["200", JSON.stringify({ driveFileCounts: opts.live })] : undefined),
+      meta: opts.meta ?? (opts.live ? ["200", metaJson(opts.live, opts.liveMeetings)] : undefined),
     });
     const fetched = runStep("deployed", { PATH: `${bin}:${process.env.PATH ?? ""}`, BASE_URL: "https://live.example.org/base", GITHUB_RUN_ID: "7", GITHUB_RUN_ATTEMPT: "1" });
     // The fetch step never fails the run by itself: what it could not get is a status for the steps after it.
     if (fetched.code !== 0) throw new Error(`the fetch step exited ${fetched.code}: ${fetched.stdout}`);
     const health = runStep("health");
     if (health.code !== 0) return { failedAt: "health", fetched, health };
-    const drop = runStep("drop", { LIVE_META_STATUS: fetched.outputs.meta_status ?? "" });
+    const drop = runStep("drop", { LIVE_META_STATUS: fetched.outputs.meta_status ?? "", LIVE_HASH_STATUS: fetched.outputs.hash_status ?? "" });
     if (drop.code !== 0) return { failedAt: "drop", fetched, health, drop };
     const decision = runStep("decide", {
       NEW_HASH: NEW,
-      DEPLOYED_STATUS: fetched.outputs.status ?? "",
+      DEPLOYED_STATUS: fetched.outputs.hash_status ?? "",
       DEPLOYED_FILE: join(dir, "tmp/deployed-hash.txt"),
       DEGRADED: health.outputs.degraded ?? "",
       DRIVE_DROP: drop.outputs.dropped ?? "",
@@ -183,9 +189,14 @@ esac
       DRIVE_DROP: "${{ steps.drop.outputs.dropped }}",
       ALLOW_DEGRADED: "${{ inputs.allow_degraded == true }}",
     });
-    expect(step("decide").env).toMatchObject({ DEPLOYED_STATUS: "${{ steps.deployed.outputs.status }}", DEPLOYED_FILE: "${{ runner.temp }}/deployed-hash.txt" });
-    expect(step("drop").env).toEqual({ LIVE_META_STATUS: "${{ steps.deployed.outputs.meta_status }}" });
-    expect(step("drop").run).toContain('scripts/drive-drop.sh "$RUNNER_TEMP/deployed-meta.json" dist/build-meta.json "$LIVE_META_STATUS"');
+    expect(step("decide").env).toMatchObject({ DEPLOYED_STATUS: "${{ steps.deployed.outputs.hash_status }}", DEPLOYED_FILE: "${{ runner.temp }}/deployed-hash.txt" });
+    expect(step("drop").env).toEqual({
+      LIVE_META_STATUS: "${{ steps.deployed.outputs.meta_status }}",
+      LIVE_HASH_STATUS: "${{ steps.deployed.outputs.hash_status }}",
+    });
+    expect(step("drop").run).toContain(
+      'scripts/drive-drop.sh "$RUNNER_TEMP/deployed-meta.json" dist/build-meta.json "$LIVE_META_STATUS" "$LIVE_HASH_STATUS" "$RUNNER_TEMP/deployed-hash.txt"',
+    );
     // The record and upload steps, and the deploy job, hang on the decision alone.
     const gated = (build.steps ?? []).filter((s) => s.if !== undefined).map((s) => s.if);
     expect(gated).toEqual(["steps.decide.outputs.deploy == 'true'", "steps.decide.outputs.deploy == 'true'"]);
@@ -204,7 +215,7 @@ esac
     // --fail would make a 404 an error (retried, and indistinguishable from an outage).
     expect(metaFetch).not.toContain("--fail");
     const r = decide({ health: "ok", live: FIVE, fresh: FIVE, liveHash: OLD });
-    expect(r.fetched.outputs).toEqual({ status: "200", meta_status: "200" });
+    expect(r.fetched.outputs).toEqual({ hash_status: "200", meta_status: "200" });
     const calls = readFileSync(join(dir, "curl-calls.txt"), "utf8").trim().split("\n");
     expect(calls).toHaveLength(2);
     expect(calls[0]).toMatch(/https:\/\/live\.example\.org\/base\/build-hash\.txt\?run=7-1$/);
@@ -227,7 +238,7 @@ esac
 
   it("no key, and the live site has no build-meta.json (HTTP 404, no baseline): warns and deploys", () => {
     const r = decide({ health: "unconfigured (no API key)", fresh: {} });
-    expect(r.fetched.outputs).toEqual({ status: "404", meta_status: "404" });
+    expect(r.fetched.outputs).toEqual({ hash_status: "404", meta_status: "404" });
     expect(r.drop?.stdout).toContain("no baseline");
     expect(r.drop?.outputs).toEqual({ dropped: "false" });
     expect(r.health.stdout).toContain("::warning::");
@@ -257,9 +268,9 @@ esac
     expect(r.health.outputs).toEqual({ degraded: "false" });
     expect(r.drop?.code).toBe(0);
     expect(r.drop?.outputs).toEqual({ dropped: "unknown" });
-    expect(r.drop?.stdout).toContain("::warning::drive-drop: could not read the live site's file counts");
+    expect(r.drop?.stdout).toContain("::warning::drive-drop: could not read the live site's file and meeting counts");
     expect(r.decision?.code).toBe(1);
-    expect(r.decision?.stdout).toMatch(/::error::Could not read the live site's file counts/);
+    expect(r.decision?.stdout).toMatch(/::error::Could not read the live site's file and meeting counts/);
     expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "degraded-blocked" });
     // The same build goes out with the checkbox ticked, and only then.
     const allowed = decide({ health: "ok", meta, fresh: FIVE, liveHash: OLD, allow: true });
@@ -277,7 +288,7 @@ esac
     const bin = fakeCurl({ hash: ["000"], meta: ["200", JSON.stringify({ driveFileCounts: FIVE })] });
     const fetched = runStep("deployed", { PATH: `${bin}:${process.env.PATH ?? ""}`, BASE_URL: "https://live.example.org", GITHUB_RUN_ID: "7", GITHUB_RUN_ATTEMPT: "2" });
     expect(fetched.code).toBe(0);
-    expect(fetched.outputs).toEqual({ status: "000", meta_status: "200" });
+    expect(fetched.outputs).toEqual({ hash_status: "000", meta_status: "200" });
   });
 
   it.each([
@@ -298,7 +309,53 @@ esac
     expect(r.health.outputs).toEqual({ degraded: "false" });
     expect(r.drop?.outputs).toEqual({ dropped: "true" });
     expect(r.decision?.code).toBe(1);
-    expect(r.decision?.stdout).toContain("far fewer files");
+    expect(r.decision?.stdout).toContain("far fewer");
+  });
+
+  it("the live site has a build hash but no build-meta.json (404): the baseline is unknown, not absent, and the run fails", () => {
+    for (const liveHash of [OLD, NEW]) {
+      const r = decide({ health: "ok", fresh: FIVE, freshMeetings: 13, liveHash });
+      expect(r.fetched.outputs).toEqual({ hash_status: "200", meta_status: "404" });
+      expect(r.drop?.outputs).toEqual({ dropped: "unknown" });
+      expect(r.drop?.stdout).toContain("build-hash.txt is published, but build-meta.json answered HTTP 404");
+      expect(r.decision?.code).toBe(1);
+      expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "degraded-blocked" });
+    }
+    const allowed = decide({ health: "ok", fresh: FIVE, freshMeetings: 13, liveHash: OLD, allow: true });
+    expect(allowed.decision?.outputs).toEqual({ deploy: "true", reason: "degraded-allowed" });
+  });
+
+  it("nothing is published at the live address (404 for both files): no baseline, and a healthy build deploys", () => {
+    const r = decide({ health: "ok", fresh: FIVE, freshMeetings: 13 });
+    expect(r.fetched.outputs).toEqual({ hash_status: "404", meta_status: "404" });
+    expect(r.drop?.stdout).toContain("no baseline");
+    expect(r.drop?.outputs).toEqual({ dropped: "false" });
+    expect(r.decision?.outputs).toEqual({ deploy: "true", reason: "changed" });
+  });
+
+  it("an emptied calendar: reachable, healthy by the log, far fewer meetings than the live site, and the run fails", () => {
+    const r = decide({ health: "ok", live: FIVE, liveMeetings: 13, fresh: FIVE, freshMeetings: 0, liveHash: OLD });
+    expect(r.health.outputs).toEqual({ degraded: "false" });
+    expect(r.drop?.outputs).toEqual({ dropped: "true" });
+    expect(r.drop?.stdout).toContain("::warning::drive-drop: the calendar listed 13 meetings on the live site and 0 in this build");
+    expect(r.decision?.code).toBe(1);
+    expect(r.decision?.stdout).toMatch(/A Drive folder or the calendar lists far fewer/);
+    expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "degraded-blocked" });
+    const allowed = decide({ health: "ok", live: FIVE, liveMeetings: 13, fresh: FIVE, freshMeetings: 0, liveHash: OLD, allow: true });
+    expect(allowed.decision?.outputs).toEqual({ deploy: "true", reason: "degraded-allowed" });
+  });
+
+  it("a blanked calendarId over a live site that recorded meetings: unconfigured by the log, a drop by the counts", () => {
+    const r = decide({ health: "unconfigured (calendarId is blank)", live: FIVE, liveMeetings: 13, fresh: FIVE, liveHash: OLD });
+    expect(r.health.outputs).toEqual({ degraded: "false" });
+    expect(r.drop?.stdout).toContain("the calendar listed 13 meetings on the live site and was not read in this build");
+    expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "degraded-blocked" });
+  });
+
+  it("the ordinary month: a meeting ends, the count moves by one, nothing is flagged", () => {
+    const r = decide({ health: "ok", live: FIVE, liveMeetings: 13, fresh: FIVE, freshMeetings: 14, liveHash: OLD });
+    expect(r.drop?.outputs).toEqual({ dropped: "false" });
+    expect(r.decision?.outputs).toEqual({ deploy: "true", reason: "changed" });
   });
 
   it("allow_degraded lets a degraded build or a drop through, with a warning", () => {
@@ -323,7 +380,7 @@ esac
     writeFileSync(join(dir, "tmp/build.log"), "[site-data] health: ok\n");
     expect(runStep("health").code).toBe(0);
     for (const status of ["200", "404", "503"]) {
-      const drop = runStep("drop", { LIVE_META_STATUS: status });
+      const drop = runStep("drop", { LIVE_META_STATUS: status, LIVE_HASH_STATUS: "404" });
       expect(drop.code, status).toBe(2);
       expect(drop.outputs).toEqual({});
     }
@@ -331,8 +388,10 @@ esac
 
   it("a missing fetch status fails at the drop step: an absent output is never read as 'no baseline'", () => {
     writeFileSync(join(dir, "dist/build-meta.json"), JSON.stringify({ driveFileCounts: FIVE }));
-    const drop = runStep("drop", { LIVE_META_STATUS: "" });
-    expect(drop.code).toBe(2);
-    expect(drop.outputs).toEqual({});
+    for (const env of [{ LIVE_META_STATUS: "", LIVE_HASH_STATUS: "404" }, { LIVE_META_STATUS: "404", LIVE_HASH_STATUS: "" }]) {
+      const drop = runStep("drop", env);
+      expect(drop.code).toBe(2);
+      expect(drop.outputs).toEqual({});
+    }
   });
 });

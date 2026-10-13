@@ -181,16 +181,24 @@ describe("build-health.sh", () => {
 });
 
 describe("drive-drop.sh", () => {
-  const meta = (counts: Record<string, unknown>) => JSON.stringify({ driveFileCounts: counts });
-  /** `undefined` means the file does not exist. `status` is the HTTP status of the live fetch. */
-  const drop = (live: string | undefined, fresh: string | undefined, status = "200") => {
+  const meta = (counts: Record<string, unknown>, meetingCount?: unknown) =>
+    JSON.stringify({ driveFileCounts: counts, ...(meetingCount === undefined ? {} : { meetingCount }) });
+  const HASH = `${"c".repeat(64)}\n`;
+  type LiveHash = [status: string, body?: string];
+  /**
+   * `undefined` means the file does not exist. `status` is the HTTP status of the live build-meta.json
+   * fetch; `hash` is the live build-hash.txt fetch (by default: published when the meta file answered
+   * 200, "not found" when it answered 404, as a real site would).
+   */
+  const drop = (live: string | undefined, fresh: string | undefined, status = "200", hash: LiveHash = status === "404" ? ["404", "<html>Not found</html>"] : ["200", HASH]) => {
     const a = join(tmp, "live.json");
     const b = join(tmp, "new.json");
-    rmSync(a, { force: true });
-    rmSync(b, { force: true });
+    const h = join(tmp, "live-hash.txt");
+    for (const f of [a, b, h]) rmSync(f, { force: true });
     if (live !== undefined) writeFileSync(a, live);
     if (fresh !== undefined) writeFileSync(b, fresh);
-    return run("drive-drop.sh", [a, b, status]);
+    if (hash[1] !== undefined) writeFileSync(h, hash[1]);
+    return run("drive-drop.sh", [a, b, status, hash[0], h]);
   };
   const FIVE = { bylaws: 6, meetings: 40, presentations: 9, letters: 5, neighborhoodPlan: 4 };
 
@@ -232,14 +240,86 @@ describe("drive-drop.sh", () => {
     expect(r.out).toContain('"bylaws" listed 6 files on the live site and is not listed in this build');
   });
 
-  // Three outcomes of the live fetch. Only a 404 means "there is nothing to compare with".
-  it("HTTP 404 is no baseline (nothing published yet, or a site from before this file existed): exits 0, whatever was saved", () => {
-    for (const body of [undefined, "", "<!doctype html><title>Page not found</title>", meta(FIVE)]) {
-      const r = drop(body, meta({ meetings: 1 }), "404");
+  // The calendar's counterpart: a calendar that is reachable but emptied would otherwise publish the
+  // standing-rule fallback with a green run. Same rule as a Drive root: 4 or more before, fewer than half now.
+  it.each<[string, unknown, unknown]>([
+    ["the same number of meetings", 13, 13],
+    ["more meetings", 13, 14],
+    ["exactly half (12 to 6, 4 to 2)", 12, 6],
+    ["an odd count at the boundary (13 to 7)", 13, 7],
+    ["3 meetings that drop to none", 3, 0],
+    ["3 meetings, and the calendar is not read in this build", 3, undefined],
+    ["a live site without a meeting count (the calendar was not read then), and one now", undefined, 13],
+    ["neither build read the calendar", undefined, undefined],
+    ["a live site that recorded no meetings", 0, 0],
+  ])("meetings, exits 0: %s", (_name, live, fresh) => {
+    const r = drop(meta(FIVE, live), meta(FIVE, fresh));
+    expect(r.code).toBe(0);
+    expect(r.err).toBe("");
+  });
+
+  it.each<[string, unknown, unknown, string]>([
+    ["fewer than half (13 to 6)", 13, 6, "drive-drop: the calendar listed 13 meetings on the live site and 6 in this build\n"],
+    ["an emptied calendar (13 to 0)", 13, 0, "drive-drop: the calendar listed 13 meetings on the live site and 0 in this build\n"],
+    ["4 meetings that drop to 1", 4, 1, "drive-drop: the calendar listed 4 meetings on the live site and 1 in this build\n"],
+    ["the calendar is not read in this build", 13, undefined, "drive-drop: the calendar listed 13 meetings on the live site and was not read in this build\n"],
+  ])("meetings, exits 1 and names both counts: %s", (_name, live, fresh, expected) => {
+    const r = drop(meta(FIVE, live), meta(FIVE, fresh));
+    expect(r.code).toBe(1);
+    expect(r.out).toBe(expected);
+  });
+
+  it("reports a Drive drop and a meeting drop together, Drive roots first", () => {
+    const r = drop(meta(FIVE, 13), meta({ ...FIVE, meetings: 12 }, 2));
+    expect(r.code).toBe(1);
+    expect(r.out).toBe(
+      'drive-drop: "meetings" listed 40 files on the live site and 12 in this build\ndrive-drop: the calendar listed 13 meetings on the live site and 2 in this build\n',
+    );
+  });
+
+  it.each<[string, unknown]>([["a string", "13"], ["negative", -1], ["fractional", 1.5], ["null", null], ["an object", { n: 13 }]])(
+    "a meetingCount that is %s makes the file unreadable: exit 3 for the live file, exit 2 for the new one",
+    (_name, bad) => {
+      expect(drop(meta(FIVE, bad), meta(FIVE, 13)).code).toBe(3);
+      expect(drop(meta(FIVE, 13), meta(FIVE, bad)).code).toBe(2);
+    },
+  );
+
+  // Three outcomes of the live fetch. Only a 404 means "there is nothing to compare with", and only
+  // when the site has no build-hash.txt either: the two files are always published together.
+  it("HTTP 404 for both files is no baseline (nothing published yet): exits 0, whatever was saved", () => {
+    for (const body of [undefined, "", "<!doctype html><title>Page not found</title>", meta(FIVE, 13)]) {
+      const r = drop(body, meta({ meetings: 1 }, 0), "404");
       expect(r.code).toBe(0);
       expect(r.out).toContain("no baseline");
       expect(r.out).toContain("HTTP 404");
     }
+  });
+
+  it("HTTP 404 for build-meta.json while build-hash.txt is published is NOT no baseline: exit 3", () => {
+    for (const hash of [HASH, `  ${"0123456789abcdef".repeat(4)}\r\n`]) {
+      for (const body of [undefined, "<html>Not found</html>"]) {
+        const r = drop(body, meta(FIVE, 13), "404", ["200", hash]);
+        expect(r.code).toBe(3);
+        expect(r.out).toBe(
+          "drive-drop: could not read the live site's file and meeting counts (build-hash.txt is published, but build-meta.json answered HTTP 404; the two are always published together)\n",
+        );
+      }
+    }
+  });
+
+  it.each<[string, LiveHash]>([
+    ["build-hash.txt answered 200 with a page, not a hash (another site at that address)", ["200", "<!doctype html><title>Old site</title>"]],
+    ["build-hash.txt answered 200 with an empty body", ["200", ""]],
+    ["build-hash.txt answered 200 with something hash-like but too short", ["200", "abc123\n"]],
+    ["build-hash.txt answered 200 but nothing was saved", ["200", undefined]],
+    ["build-hash.txt could not be fetched (000)", ["000", undefined]],
+    ["build-hash.txt answered 503", ["503", "Service Unavailable"]],
+    ["build-hash.txt answered 404 with a body that happens to be a hash", ["404", HASH]],
+  ])("HTTP 404 for build-meta.json is still no baseline when %s", (_name, hash) => {
+    const r = drop(undefined, meta(FIVE, 13), "404", hash);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("no baseline");
   });
 
   it.each(["000", "500", "502", "503", "504", "429", "403", "301", "410", "204"])(
@@ -248,7 +328,7 @@ describe("drive-drop.sh", () => {
       for (const body of [undefined, "", "<html>Bad gateway</html>", meta(FIVE)]) {
         const r = drop(body, meta(FIVE), status);
         expect(r.code).toBe(3);
-        expect(r.out).toBe(`drive-drop: could not read the live site's file counts (HTTP ${status} for build-meta.json)\n`);
+        expect(r.out).toBe(`drive-drop: could not read the live site's file and meeting counts (HTTP ${status} for build-meta.json)\n`);
       }
     },
   );
@@ -268,7 +348,7 @@ describe("drive-drop.sh", () => {
   ])("HTTP 200 with a body that is %s could not be read either: exits 3", (_name, live) => {
     const r = drop(live, meta({ meetings: 1 }));
     expect(r.code).toBe(3);
-    expect(r.out).toBe("drive-drop: could not read the live site's file counts (HTTP 200, but build-meta.json is not the expected JSON)\n");
+    expect(r.out).toBe("drive-drop: could not read the live site's file and meeting counts (HTTP 200, but build-meta.json is not the expected JSON)\n");
     expect(r.out).not.toContain("injected");
   });
 
@@ -291,12 +371,16 @@ describe("drive-drop.sh", () => {
   it("exits 2 on wrong usage, including a status that is not three digits", () => {
     expect(run("drive-drop.sh").code).toBe(2);
     expect(run("drive-drop.sh", [join(tmp, "one.json")]).code).toBe(2);
-    expect(run("drive-drop.sh", ["a", "b"]).code).toBe(2);
-    expect(run("drive-drop.sh", ["a", "b", "200", "d"]).code).toBe(2);
+    expect(run("drive-drop.sh", ["a", "b", "200"]).code).toBe(2);
+    expect(run("drive-drop.sh", ["a", "b", "200", "200"]).code).toBe(2);
+    expect(run("drive-drop.sh", ["a", "b", "200", "200", "h", "extra"]).code).toBe(2);
     for (const status of ["", "ok", "20", "2000", "200\n"]) {
-      const r = drop(meta(FIVE), meta(FIVE), status);
-      expect(r.code, JSON.stringify(status)).toBe(2);
-      expect(r.err).toContain("HTTP status");
+      const asMeta = drop(meta(FIVE), meta(FIVE), status, ["200", HASH]);
+      expect(asMeta.code, JSON.stringify(status)).toBe(2);
+      expect(asMeta.err).toContain("HTTP status");
+      const asHash = drop(meta(FIVE), meta(FIVE), "200", [status, HASH]);
+      expect(asHash.code, JSON.stringify(status)).toBe(2);
+      expect(asHash.err).toContain("HTTP status");
     }
   });
 });
@@ -424,13 +508,13 @@ describe("deploy-decision.sh", () => {
 
   it("says which kind of problem blocked the deploy", () => {
     expect(decide(...DIFFERENT, { DEGRADED: "true" }).out).toMatch(/unreachable or misconfigured/);
-    expect(decide(...DIFFERENT, { DRIVE_DROP: "true" }).out).toMatch(/far fewer files/);
+    expect(decide(...DIFFERENT, { DRIVE_DROP: "true" }).out).toMatch(/A Drive folder or the calendar lists far fewer/);
     const both = decide(...DIFFERENT, { DEGRADED: "true", DRIVE_DROP: "true" }).out;
     expect(both).toMatch(/unreachable or misconfigured/);
-    expect(both).toMatch(/far fewer files/);
+    expect(both).toMatch(/far fewer/);
     const unknown = decide(...DIFFERENT, { DRIVE_DROP: "unknown" }).out;
-    expect(unknown).toMatch(/could not read the live site's file counts/i);
-    expect(unknown).not.toMatch(/far fewer files|unreachable or misconfigured/);
+    expect(unknown).toMatch(/could not read the live site's file and meeting counts/i);
+    expect(unknown).not.toMatch(/far fewer|unreachable or misconfigured/);
   });
 
   it.each(["DEGRADED", "DRIVE_DROP"])("requires %s to be exactly one of its values, and writes no output otherwise", (name) => {

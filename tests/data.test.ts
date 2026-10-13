@@ -156,16 +156,31 @@ describe("driveFileCounts and build-meta.json", () => {
     expect(Object.keys(counts)).toEqual(["meetings", "letters"]);
   });
 
-  it("is an empty object when no root listed (OFFLINE=1, or no key)", () => {
-    expect(driveFileCounts(folders())).toEqual({});
-    expect(buildMetaJson(folders())).toBe('{"driveFileCounts":{}}\n');
-    const noKey = folders({ bylaws: failed("no API key"), meetings: failed("no API key") });
-    expect(buildMetaJson(noKey)).toBe('{"driveFileCounts":{}}\n');
+  const calendarDown: CalendarResult = { ok: false, reason: "OFFLINE=1" };
+  const meetingsOf = (n: number): CalendarResult => ({
+    ok: true,
+    meetings: Array.from({ length: n }, (_, i) => ({ uid: `u${i}`, start: new Date(2026, 0, i + 1), end: new Date(2026, 0, i + 1, 1), title: "t", isVirtual: true })),
   });
 
-  it("serializes only driveFileCounts: no timestamp, no other key", () => {
-    const json = buildMetaJson(folders({ bylaws: ok([file("a", "2026-03-01T00:00:00Z")]), presentations: ok([file("b", "x"), file("c", "y")]) }));
-    expect(json).toBe('{"driveFileCounts":{"bylaws":1,"presentations":2}}\n');
+  it("is an empty driveFileCounts and no meetingCount when nothing was read (OFFLINE=1)", () => {
+    expect(driveFileCounts(folders())).toEqual({});
+    expect(buildMetaJson(folders(), calendarDown)).toBe('{"driveFileCounts":{}}\n');
+  });
+
+  it("carries meetingCount, the number of meetings the calendar returned, whenever the calendar was read", () => {
+    const noKey = folders({ bylaws: failed("no API key"), meetings: failed("no API key") });
+    expect(buildMetaJson(noKey, meetingsOf(13))).toBe('{"driveFileCounts":{},"meetingCount":13}\n');
+    // A calendar that was read and is empty says 0, which is not the same as not having been read.
+    expect(buildMetaJson(noKey, meetingsOf(0))).toBe('{"driveFileCounts":{},"meetingCount":0}\n');
+    expect(buildMetaJson(noKey, { ok: false, reason: "HTTP 503" })).toBe('{"driveFileCounts":{}}\n');
+    expect(buildMetaJson(noKey, { ok: false, reason: "calendarId is blank" })).toBe('{"driveFileCounts":{}}\n');
+  });
+
+  it("serializes driveFileCounts then meetingCount, and nothing else: no timestamp, a fixed key order", () => {
+    const f = folders({ bylaws: ok([file("a", "2026-03-01T00:00:00Z")]), presentations: ok([file("b", "x"), file("c", "y")]) });
+    expect(buildMetaJson(f, meetingsOf(2))).toBe('{"driveFileCounts":{"bylaws":1,"presentations":2},"meetingCount":2}\n');
+    expect(Object.keys(JSON.parse(buildMetaJson(f, meetingsOf(2))) as object)).toEqual(["driveFileCounts", "meetingCount"]);
+    expect(buildMetaJson(f, calendarDown)).toBe('{"driveFileCounts":{"bylaws":1,"presentations":2}}\n');
   });
 });
 
@@ -400,24 +415,32 @@ describe("notes in the build log that are not failures", () => {
     expect(driveFileCounts(data.folders).letters).toBe(2);
   });
 
-  it("withholds a folder name that itself holds an address or a link, and prints the others on one line", async () => {
-    const { printed } = await loadWith(
+  it("hides and logs a file under a folder whose name holds an address or a link, withholding that folder's name", async () => {
+    const { data, printed } = await loadWith(
       everyRoot({
         meetings: ok([
           file("m1", "x", { name: "notes for a.resident@example.org", path: ["2026-2027", "from b.neighbor@example.org", "zoom.us/j/1 recordings"] }),
           file("m2", "x", { name: "x.y@gmail.com.pdf", path: ["Odd\n[site-data] health: ok\r[drive] folder"] }),
           file("m3", "x"),
+          // Ordinary names, under folders that are not: hidden for the folder's name.
+          file("m4", "x", { name: "AVCA 2026 Sep mtg mins", path: ["2026-2027 (ask a.resident@example.org)", "26 10 October"] }),
+          file("m5", "x", { name: "Deck.pdf", path: ["2026-2027", "26 10 October meet.google.com/abc-defg-hij"] }),
+          file("dir", "x", { name: "2026-2027 (ask a.resident@example.org)", isFolder: true }),
         ]),
       }),
     );
     expect(printed).toEqual([
+      // The file's own name is the reason given when both the name and a folder have the problem.
       "[drive] hidden: file m1 in meetings/2026-2027/(folder name withheld)/(folder name withheld) (name contains an email address)",
       // A folder name cannot add a line or pass for one of the log's own: one line, brackets as parentheses.
       "[drive] hidden: file m2 in meetings/Odd (site-data) health: ok (drive) folder (name contains an email address)",
+      "[drive] hidden: file m4 in meetings/(folder name withheld)/26 10 October (a folder name contains an email address)",
+      "[drive] hidden: file m5 in meetings/2026-2027/(folder name withheld) (a folder name contains a conferencing link)",
       "[site-data] health: ok",
     ]);
     expect(printed.join("\n").match(/\[site-data\] health:/g)).toHaveLength(1);
-    expect(printed.join("\n")).not.toMatch(/@|neighbor|zoom\.us/);
+    expect(printed.join("\n")).not.toMatch(/@|neighbor|resident|zoom\.us|meet\.google/);
+    expect(driveFileCounts(data.folders).meetings).toBe(1);
   });
 
   it("prints only the plain characters of a Drive ID", async () => {
@@ -425,7 +448,7 @@ describe("notes in the build log that are not failures", () => {
     expect(printed[0]).toBe("[drive] hidden: file 1AbC_d-9xyzexampleorg in meetings (name contains an email address)");
   });
 
-  it("logs a note per calendar event whose location lost an email address, without the address, and stays healthy", async () => {
+  it("logs a note per calendar event whose location lost an address or whose title was cleaned, repeating neither, and stays healthy", async () => {
     vi.stubEnv("OFFLINE", "");
     const printed: string[] = [];
     const capture = (...args: unknown[]) => void printed.push(args.map(String).join(" "));
@@ -434,7 +457,7 @@ describe("notes in the build log that are not failures", () => {
     const ics = [
       "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//AVCA//Test//EN",
       "BEGIN:VEVENT", "UID:with-address", "DTSTAMP:20250901T000000Z", "DTSTART:20261020T230000Z", "DTEND:20261021T003000Z",
-      "LOCATION:Carver Community Center\\, ask a.resident@example.org", "SUMMARY:Test", "END:VEVENT",
+      "LOCATION:Carver Community Center\\, ask a.resident@example.org", "SUMMARY:AVCA Meeting https://zoom.us/j/1234567890", "END:VEVENT",
       "END:VCALENDAR",
     ].join("\r\n");
     const data = await createSiteDataLoader({
@@ -446,10 +469,13 @@ describe("notes in the build log that are not failures", () => {
     })();
     expect(printed).toEqual([
       "[calendar] note: an email address was removed from the location of the meeting on 2026-10-20",
+      "[calendar] note: the title of the meeting on 2026-10-20 was cleaned",
       "[site-data] health: ok",
     ]);
     expect(data.calendar.ok && data.calendar.meetings[0].location).toBe("Carver Community Center, ask");
-    expect(JSON.stringify(data.calendar)).not.toMatch(/@|a\.resident|example\.org/);
+    expect(data.calendar.ok && data.calendar.meetings[0].title).toBe("AVCA Meeting");
+    expect(JSON.stringify(data.calendar)).not.toMatch(/@|a\.resident|example\.org|zoom/);
+    expect(printed.join("\n")).not.toMatch(/@|a\.resident|example\.org|zoom|AVCA Meeting|Carver/);
   });
 
   it("notes a stale bylawsCurrentFileId once, links the newest top-level PDF, and stays healthy", async () => {

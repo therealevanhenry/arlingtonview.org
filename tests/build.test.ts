@@ -14,6 +14,8 @@
  * from locations, and hides Drive files whose names hold a link or an address (src/lib/privacy.ts);
  * assertions 4 and 5 make sure nothing leaks if any of that changes. Their detectors, and the one for
  * assertion 3, live in tests/support/dist-checks.ts and are unit-tested in tests/dist-checks.test.ts.
+ * A failure names the page and the kind of match and shows the match masked, never in full: this
+ * output goes to a public Actions log.
  *
  * Reproducibility (two builds compared) is deliberately not tested here; it is slow and belongs to
  * the deploy task.
@@ -26,10 +28,14 @@ import { CONFERENCING_HELP, conferencingLinks, EMAIL_HELP, emailLeaks, TARGET_HE
 
 const DIST = resolve(process.cwd(), "dist");
 
-/** The one address the site may print: `contactEmail` in settings.yaml, read at test time. */
-function contactAddress(): string {
-  const { contactEmail } = parse(readFileSync(resolve("src/content/settings.yaml"), "utf8")) as { contactEmail: string };
-  return contactEmail.toLowerCase();
+/**
+ * The one address the site may print: `contactEmail` in settings.yaml, read at test time. And the one
+ * address-shaped value that may sit percent-encoded in a link: `calendarId`, which is part of the
+ * calendar's own subscribe links.
+ */
+function allowedAddresses(): { contact: string; inLinks: string[] } {
+  const { contactEmail, calendarId } = parse(readFileSync(resolve("src/content/settings.yaml"), "utf8")) as { contactEmail: string; calendarId: string };
+  return { contact: contactEmail.toLowerCase(), inLinks: calendarId.trim() === "" ? [] : [calendarId.trim()] };
 }
 const EXPECTED_PAGES = [
   "index.html",
@@ -119,8 +125,9 @@ describe("build output (dist/)", () => {
 
   it("5. no gmail.com, and no email address other than settings.contactEmail", () => {
     // Page text must not type an address: the configured one is the only source (see JoinAction).
-    const allowed = contactAddress();
-    expect(offenders((h) => emailLeaks(h, allowed)), EMAIL_HELP).toEqual([]);
+    // Percent-encoded addresses in attributes count too (an event title goes into a link that way).
+    const { contact, inLinks } = allowedAddresses();
+    expect(offenders((h) => emailLeaks(h, contact, inLinks)), EMAIL_HELP).toEqual([]);
   });
 
   it("6. internal links carry the base path, end in a slash (pages), and resolve to files in dist/", () => {
@@ -183,13 +190,17 @@ describe("build output (dist/)", () => {
     expect(readFileSync(file, "utf8"), "dist/CNAME content").toBe("arlingtonview.org");
   });
 
-  it("11. dist/build-meta.json holds driveFileCounts, whole numbers per root, and nothing else", () => {
+  it("11. dist/build-meta.json holds driveFileCounts (whole numbers per root), an optional meetingCount, and nothing else", () => {
     // The deploy workflow compares this file with the live site's copy (scripts/drive-drop.sh). It is part
     // of the build hash, so it must hold nothing that changes when the file counts do not.
     const file = join(DIST, "build-meta.json");
     expect(existsSync(file), "dist/build-meta.json is missing (src/pages/build-meta.json.ts writes it)").toBe(true);
     const meta = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
-    expect(Object.keys(meta), "dist/build-meta.json: top-level keys").toEqual(["driveFileCounts"]);
+    // In this order; meetingCount is there exactly when the calendar was read.
+    expect(Object.keys(meta), "dist/build-meta.json: top-level keys").toEqual("meetingCount" in meta ? ["driveFileCounts", "meetingCount"] : ["driveFileCounts"]);
+    if ("meetingCount" in meta) {
+      expect(Number.isSafeInteger(meta.meetingCount) && (meta.meetingCount as number) >= 0, "meetingCount must be a whole, non-negative number").toBe(true);
+    }
     const counts = meta.driveFileCounts as Record<string, unknown>;
     expect(typeof counts === "object" && counts !== null && !Array.isArray(counts), "driveFileCounts must be an object").toBe(true);
     const bad = Object.entries(counts).filter(([, n]) => !Number.isSafeInteger(n) || (n as number) < 0);

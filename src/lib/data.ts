@@ -1,7 +1,7 @@
 import { buildArchive, currentBylaws, visibleFiles, type ArchiveRow } from "./archive";
 import { loadCalendar, type CalendarResult } from "./calendar";
 import { DRIVE_ROOTS, loadAllFolders, type DriveRoot, type FolderResult } from "./drive";
-import { privateNameReason } from "./privacy";
+import { privateFileReason, privateNameReason } from "./privacy";
 import { getSettings, type Settings } from "./settings";
 import { nowInNewYork } from "./time";
 
@@ -99,12 +99,15 @@ export function driveFileCounts(folders: Record<DriveRoot, FolderResult>): Parti
 }
 
 /**
- * The body of `dist/build-meta.json`: only the per-root file counts, which the deploy workflow compares
- * with the live site's copy (`scripts/drive-drop.sh`). No timestamp: the file is part of the build hash
- * and must change only when a count does.
+ * The body of `dist/build-meta.json`: the per-root file counts and, when the calendar was read, the
+ * number of meetings it returned (`meetingCount`; left out when it was not read, which is not the same
+ * as 0). The deploy workflow compares both with the live site's copy (`scripts/drive-drop.sh`). The
+ * key order is fixed, and there is no timestamp: the file is part of the build hash and must change
+ * only when a count does.
  */
-export function buildMetaJson(folders: Record<DriveRoot, FolderResult>): string {
-  return `${JSON.stringify({ driveFileCounts: driveFileCounts(folders) })}\n`;
+export function buildMetaJson(folders: Record<DriveRoot, FolderResult>, calendar: CalendarResult): string {
+  const meta = { driveFileCounts: driveFileCounts(folders), ...(calendar.ok ? { meetingCount: calendar.meetings.length } : {}) };
+  return `${JSON.stringify(meta)}\n`;
 }
 
 /**
@@ -143,15 +146,16 @@ export function createSiteDataLoader(deps: SiteDataDeps = defaultDeps): () => Pr
       if (!calendar.ok && settings.calendarId.trim() !== "" && !offline) {
         console.warn(`[calendar] not loaded: ${calendar.reason}; the meetings list will be empty`);
       }
-      // Not failures: an email address removed from a meeting's location, a file left out because its
-      // name holds an email address or a conferencing link (`visibleFiles` hides it everywhere), and a
-      // bylaws file ID that has gone stale. None of these lines repeats what was removed or hidden.
+      // Not failures: an email address removed from a meeting's location, a title that was cleaned, a
+      // file left out because its name (or a folder's above it) holds an email address or a
+      // conferencing link (`visibleFiles` hides it everywhere), and a bylaws file ID that has gone
+      // stale. None of these lines repeats what was removed or hidden.
       for (const note of calendar.ok ? (calendar.notes ?? []) : []) console.warn(`[calendar] note: ${logName(note)}`);
       for (const root of DRIVE_ROOTS) {
         const folder = folders[root];
         if (!folder.ok) continue;
         for (const file of folder.files) {
-          const reason = file.isFolder ? undefined : privateNameReason(file.name);
+          const reason = file.isFolder ? undefined : privateFileReason(file);
           if (reason === undefined) continue;
           const id = file.id.replace(/[^A-Za-z0-9_-]/g, "");
           console.warn(`[drive] hidden: file ${id} in ${logPlace(root, file.path)} (${reason})`);

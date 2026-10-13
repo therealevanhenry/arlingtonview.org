@@ -3,9 +3,9 @@
 # ops/apps-script on every calendar change and once a day (a second clock in case GitHub disables the
 # cron; the workflow-dispatch API needs a token with the Actions permission only).
 # Skips the deploy when the build matches the live site (build-hash.txt). A degraded build (Google
-# unreachable or misconfigured, an empty Drive folder, or a folder that lost more than half its files)
-# fails instead of replacing a healthy site; the only way past that is a manual run with
-# allow_degraded ticked. A run for a commit that is no longer the tip of main does nothing.
+# unreachable or misconfigured, an empty Drive folder, or a folder or calendar that lost more than half
+# of what the live site shows) fails instead of replacing a healthy site; the only way past that is a
+# manual run with allow_degraded ticked. A run for a commit that is no longer the tip of main does nothing.
 # See README section 3.
 name: Deploy
 
@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       allow_degraded:
-        description: Deploy even if the build is degraded (Google Drive or Calendar could not be read, or a Drive folder lists far fewer files than the live site)
+        description: Deploy even if the build is degraded (Google Drive or Calendar could not be read, or lists far fewer files or meetings than the live site)
         type: boolean
         default: false
 
@@ -131,16 +131,19 @@ jobs:
           echo "value=$digest" >> "$GITHUB_OUTPUT"
 
       # What is live right now (the github.io preview before DNS cutover, the apex after).
-      # For the hash, any failure just means "different". For the file counts it does not: only a 404
-      # means "nothing to compare with"; a fetch that fails any other way is retried, and if it still
-      # fails the run is treated as degraded (scripts/drive-drop.sh has the three outcomes).
-      - name: Fetch the deployed build hash and file counts
+      # For the hash, any failure just means "different". For the counts it does not: only a 404, with
+      # no build-hash.txt published either, means "nothing to compare with"; a fetch that fails any other
+      # way is retried, and if it still fails the run is treated as degraded (scripts/drive-drop.sh has
+      # the three outcomes).
+      - name: Fetch the deployed build hash and counts
         id: deployed
         run: |
           # Best-effort cache busting: Pages may serve a stale copy for a few minutes after a deploy.
           bust="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          status=$(curl -sS --globoff --max-time 20 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-hash.txt" -w '%{http_code}' "$BASE_URL/build-hash.txt?$bust" || true)
-          echo "status=${status:-000}" >> "$GITHUB_OUTPUT"
+          rm -f "$RUNNER_TEMP/deployed-hash.txt"
+          hash_status=$(curl -sS --globoff --max-time 20 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-hash.txt" -w '%{http_code}' "$BASE_URL/build-hash.txt?$bust" || true)
+          hash_status=${hash_status:-000}
+          echo "hash_status=${hash_status: -3}" >> "$GITHUB_OUTPUT"
           # Up to 3 retries on a timeout, a connection error, or a 5xx; at most 90 seconds in all. A 404
           # is an answer, not an error, and is not retried. curl prints "000" when no answer came.
           rm -f "$RUNNER_TEMP/deployed-meta.json"
@@ -150,14 +153,15 @@ jobs:
         env:
           BASE_URL: ${{ steps.pages.outputs.base_url }}
 
-      # Drive answers HTTP 200 with fewer files when sharing is removed from a subfolder, so a listing
-      # that "worked" can still be wrong. A root that lost more than half its files counts as degraded,
-      # and so does a baseline that could not be read (exit 3): not knowing is not "no drop".
-      - name: Compare Drive file counts with the live site
+      # Drive answers HTTP 200 with fewer files when sharing is removed from a subfolder, and an emptied
+      # calendar is still a valid feed, so a build that "worked" can still be wrong. A root that lost
+      # more than half its files, or a calendar that lost more than half its meetings, counts as
+      # degraded, and so does a baseline that could not be read (exit 3): not knowing is not "no drop".
+      - name: Compare file and meeting counts with the live site
         id: drop
         run: |
           rc=0
-          report=$(scripts/drive-drop.sh "$RUNNER_TEMP/deployed-meta.json" dist/build-meta.json "$LIVE_META_STATUS") || rc=$?
+          report=$(scripts/drive-drop.sh "$RUNNER_TEMP/deployed-meta.json" dist/build-meta.json "$LIVE_META_STATUS" "$LIVE_HASH_STATUS" "$RUNNER_TEMP/deployed-hash.txt") || rc=$?
           printf '%s\n' "$report"
           case "$rc" in
             0) echo "dropped=false" >> "$GITHUB_OUTPUT" ;;
@@ -173,13 +177,14 @@ jobs:
           esac
         env:
           LIVE_META_STATUS: ${{ steps.deployed.outputs.meta_status }}
+          LIVE_HASH_STATUS: ${{ steps.deployed.outputs.hash_status }}
 
       - name: Decide whether to deploy
         id: decide
         run: scripts/deploy-decision.sh
         env:
           NEW_HASH: ${{ steps.hash.outputs.value }}
-          DEPLOYED_STATUS: ${{ steps.deployed.outputs.status }}
+          DEPLOYED_STATUS: ${{ steps.deployed.outputs.hash_status }}
           DEPLOYED_FILE: ${{ runner.temp }}/deployed-hash.txt
           DEGRADED: ${{ steps.health.outputs.degraded }}
           DRIVE_DROP: ${{ steps.drop.outputs.dropped }}

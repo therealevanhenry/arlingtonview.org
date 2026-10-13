@@ -6,9 +6,9 @@
 #   DEPLOYED_STATUS   HTTP status of <deployed site>/build-hash.txt, "000" when the request failed
 #   DEPLOYED_FILE     path of the downloaded response body (may be empty or absent)
 #   DEGRADED          exactly "true" (scripts/build-health.sh: Google was asked and something failed) or "false"
-#   DRIVE_DROP        exactly "true" (scripts/drive-drop.sh: a Drive folder lists far fewer files than
-#                     the live site shows), "false", or "unknown" (the live site's file counts could
-#                     not be read, so a drop cannot be ruled out)
+#   DRIVE_DROP        exactly "true" (scripts/drive-drop.sh: a Drive folder lists far fewer files, or
+#                     the calendar far fewer meetings, than the live site shows), "false", or "unknown"
+#                     (the live site's counts could not be read, so a drop cannot be ruled out)
 #   ALLOW_DEGRADED    "true" only for a workflow_dispatch run that ticked allow_degraded
 #   GITHUB_OUTPUT     where step outputs are appended (stdout when unset, for local runs)
 #
@@ -66,10 +66,10 @@ if [ "$degraded" = "true" ]; then
 fi
 if [ "$drop" = "true" ]; then
   bad=true
-  problem="${problem:+$problem }A Drive folder lists far fewer files than the live site shows (was sharing removed from a folder or a subfolder?)."
+  problem="${problem:+$problem }A Drive folder or the calendar lists far fewer entries than the live site shows (was sharing removed from a folder or a subfolder, or the calendar emptied?). The step that compares the counts names which."
 elif [ "$drop" = "unknown" ]; then
   bad=true
-  problem="${problem:+$problem }Could not read the live site's file counts (build-meta.json), so this build's Drive folders could not be compared with what is published."
+  problem="${problem:+$problem }Could not read the live site's file and meeting counts (build-meta.json), so this build could not be compared with what is published."
 fi
 
 same=false
