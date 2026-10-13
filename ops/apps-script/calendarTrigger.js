@@ -14,7 +14,7 @@
  * repository with a single permission, Actions (read and write). All three calls below need only that:
  *   GET  /actions/workflows/<file>             "Actions" repository permissions (read)
  *   PUT  /actions/workflows/<file>/enable      "Actions" repository permissions (write)
- *   POST /actions/workflows/<file>/dispatches  "Actions" repository permissions (write)
+ *   POST /actions/workflows/<file>/dispatches  "Actions" repository permissions (write); 204 or 200
  * The token cannot read or write the repository's contents, so it cannot push to main.
  * Any unexpected response throws, so Google emails the trigger's owner.
  */
@@ -41,10 +41,11 @@ function request_(method, path, payload) {
   return UrlFetchApp.fetch(REPO_API_ + path, options);
 }
 
+// `expected` is one status code, or a list of acceptable ones.
 function expect_(response, expected, what) {
   var code = response.getResponseCode();
   console.log(what + ' response code: ' + code);
-  if (code !== expected) {
+  if ([].concat(expected).indexOf(code) === -1) {
     throw new Error(what + ' failed: HTTP ' + code + ' ' + response.getContentText().substring(0, 300));
   }
   return response;
@@ -61,12 +62,13 @@ function ensureActive_(workflowFile) {
 
 function dispatch_(workflowFile) {
   ensureActive_(workflowFile);
-  // "Create a workflow dispatch event". The 204 expected below holds for the API version pinned in
-  // request_ (X-GitHub-Api-Version: 2022-11-28) with no return_run_details parameter: an empty answer.
-  // The 2026-03-10 API version answers 200 with the run's details instead. Whoever raises the pinned
-  // version must revisit the status passed to expect_ here.
+  // "Create a workflow dispatch event". 204 is the answer for the API version pinned in request_
+  // (X-GitHub-Api-Version: 2022-11-28) with no return_run_details parameter: an empty body. The
+  // 2026-03-10 API version answers 200 with the run's details instead. Both mean the run has started,
+  // so both are accepted: a started run must not be reported (and emailed) as a failure. Whoever
+  // raises the pinned version should still revisit the statuses passed to expect_ here.
   var path = '/actions/workflows/' + workflowFile + '/dispatches';
-  expect_(request_('post', path, { ref: 'main' }), 204, 'Start ' + workflowFile);
+  expect_(request_('post', path, { ref: 'main' }), [204, 200], 'Start ' + workflowFile);
 }
 
 function onCalendarUpdated(e) {

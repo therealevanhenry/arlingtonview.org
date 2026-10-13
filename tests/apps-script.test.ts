@@ -100,7 +100,7 @@ describe("calendarTrigger.js", () => {
 
   it("throws on any unexpected answer, so Google emails the trigger's owner", () => {
     const rejectPost = (code: number) => (call: Call): Answer => (call.method === "POST" ? { code, text: "Resource not accessible by personal access token" } : github("active")(call));
-    for (const code of [401, 403, 404, 422, 200]) {
+    for (const code of [201, 202, 301, 400, 401, 403, 404, 422, 500, 503]) {
       const { fns } = load(rejectPost(code));
       expect(() => fns.onDailyTick(), String(code)).toThrow(new RegExp(`Start deploy\\.yml failed: HTTP ${code}`));
     }
@@ -110,6 +110,24 @@ describe("calendarTrigger.js", () => {
     const noEnable = load((call) => (call.method === "GET" ? { code: 200, text: '{"state":"disabled_inactivity"}' } : call.method === "PUT" ? { code: 403 } : { code: 204 }));
     expect(() => noEnable.fns.onDailyTick()).toThrow(/Enable deploy\.yml failed: HTTP 403/);
     expect(summary(noEnable.calls)).not.toContain("POST /actions/workflows/deploy.yml/dispatches");
+  });
+
+  it("takes 204 or 200 for a started run: a newer API version answers 200 with the run's details", () => {
+    // Pinned to 2022-11-28, GitHub answers 204 with no body. Under 2026-03-10 it answers 200 with a
+    // body. Either way the run has started, and a started run must not be reported as a failure.
+    const startedWith = (code: number, text: string) => (call: Call): Answer => (call.method === "POST" ? { code, text } : github("active")(call));
+    for (const [code, text] of [[204, ""], [200, '{"workflow_run_id":1,"run_url":"https://api.github.com/x","html_url":"https://github.com/x"}']] as const) {
+      for (const entry of ["onCalendarUpdated", "onDailyTick", "onWeeklyLinkCheck", "testDispatch"] as const) {
+        const { calls, fns } = load(startedWith(code, text));
+        expect(() => fns[entry](), `${entry} ${code}`).not.toThrow();
+        expect(calls.at(-1)?.method).toBe("POST");
+      }
+    }
+    // The other two calls keep their one expected answer.
+    const getAnswers204 = load((call) => (call.method === "GET" ? { code: 204 } : { code: 204 }));
+    expect(() => getAnswers204.fns.onDailyTick()).toThrow(/Get deploy\.yml failed: HTTP 204/);
+    const enableAnswers200 = load((call) => (call.method === "GET" ? { code: 200, text: '{"state":"disabled_inactivity"}' } : call.method === "PUT" ? { code: 200 } : { code: 204 }));
+    expect(() => enableAnswers200.fns.onDailyTick()).toThrow(/Enable deploy\.yml failed: HTTP 200/);
   });
 
   it("throws before any request when the token is not set", () => {
