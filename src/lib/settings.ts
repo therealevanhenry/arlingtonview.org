@@ -48,23 +48,3 @@ export const getBoard = (): Promise<Board> => readYaml("board.yaml", boardSchema
 export async function getResources(): Promise<ResourceGroup[]> {
   return (await readYaml("resources.yaml", resourcesSchema)).groups;
 }
-
-export type ConfiguredStatus = {
-  calendarId: boolean;
-  joinFormUrl: boolean;
-  drive: Record<keyof Settings["drive"], boolean>;
-};
-
-const isSet = (value: string): boolean => value.trim() !== "";
-
-/** True per key when the value is non-blank. A blank `joinFormUrl` is a valid launch state. */
-export function isConfigured(settings: Settings): ConfiguredStatus {
-  const drive = Object.fromEntries(
-    Object.entries(settings.drive).map(([key, value]) => [key, isSet(value)]),
-  ) as ConfiguredStatus["drive"];
-  return {
-    calendarId: isSet(settings.calendarId),
-    joinFormUrl: isSet(settings.joinFormUrl),
-    drive,
-  };
-}

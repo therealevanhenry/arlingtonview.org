@@ -25,9 +25,13 @@
   --step-1: 1.3125rem; /* 21 */
   --step-2: 1.75rem; /* 28 */
   --step-3: 2.25rem; /* 36 */
-  --step-4: 3rem; /* 48 */
-  --step-display: clamp(2.25rem, 1.5rem + 3.5vw, 3.75rem); /* reserved: the home date now uses --step-hero */
-  --step-hero: clamp(3.25rem, 1.5rem + 8vw, 7.5rem); /* the month and day in the home meeting notice only */
+  /*
+   * The month and day in the home meeting notice only. The 7.5rem (120px) maximum is a ceiling, not a
+   * size the date reaches: where container units are supported, .notice-monthday is also capped at
+   * 19.2cqi of its column (global.css), which is about 111px at the full container width, and that cap
+   * is the smaller one from about 56rem up. 7.5rem applies only in a browser without container units.
+   */
+  --step-hero: clamp(3.25rem, 1.5rem + 8vw, 7.5rem);
 
   --leading-body: 1.55;
   --leading-heading: 1.15;

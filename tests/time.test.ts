@@ -4,48 +4,12 @@ import {
   formatCalendarDate,
   formatFileDate,
   formatModifiedDate,
-  formatMeetingDate,
   formatMeetingMonthDay,
-  formatMeetingRange,
   formatMeetingTime,
   formatMeetingWeekday,
   localDate,
   nowInNewYork,
 } from "../src/lib/time";
-
-describe("formatMeetingRange", () => {
-  it("formats a range in New York time", () => {
-    expect(
-      formatMeetingRange(new Date("2026-09-23T23:00:00Z"), new Date("2026-09-24T00:30:00Z")),
-    ).toBe("Wednesday, September 23, 2026, 7:00 to 8:30 pm");
-  });
-
-  it("shows both meridiems when the range crosses noon", () => {
-    expect(
-      formatMeetingRange(new Date("2026-01-28T16:00:00Z"), new Date("2026-01-28T17:30:00Z")),
-    ).toBe("Wednesday, January 28, 2026, 11:00 am to 12:30 pm");
-  });
-
-  it("uses standard time in winter", () => {
-    expect(
-      formatMeetingRange(new Date("2026-11-18T00:00:00Z"), new Date("2026-11-18T01:30:00Z")),
-    ).toBe("Tuesday, November 17, 2026, 7:00 to 8:30 pm");
-  });
-});
-
-describe("formatMeetingRange across local midnight", () => {
-  it("appends the end date", () => {
-    expect(
-      formatMeetingRange(new Date("2026-09-29T23:00:00Z"), new Date("2026-09-30T05:00:00Z")),
-    ).toBe("Tuesday, September 29, 2026, 7:00 pm to Wednesday, September 30, 2026, 1:00 am");
-  });
-
-  it("does not append it when the end is before local midnight, even if UTC has rolled over", () => {
-    expect(
-      formatMeetingRange(new Date("2026-09-29T23:00:00Z"), new Date("2026-09-30T03:30:00Z")),
-    ).toBe("Tuesday, September 29, 2026, 7:00 to 11:30 pm");
-  });
-});
 
 describe("localDate", () => {
   it("returns the New York calendar date", () => {
@@ -62,13 +26,19 @@ describe("nowInNewYork", () => {
   });
 });
 
-describe("formatMeetingDate and formatMeetingTime", () => {
-  const start = new Date("2026-09-29T23:00:00Z");
-  const end = new Date("2026-09-30T00:30:00Z");
+describe("formatMeetingTime and formatCalendarDate", () => {
+  it("formats a time range in New York time, with one meridiem when both ends share it", () => {
+    expect(formatMeetingTime(new Date("2026-09-29T23:00:00Z"), new Date("2026-09-30T00:30:00Z"))).toBe("7:00 to 8:30 pm");
+    expect(formatMeetingTime(new Date("2026-09-29T23:00:00Z"), new Date("2026-09-30T03:30:00Z"))).toBe("7:00 to 11:30 pm");
+  });
 
-  it("splits the range into a date and a time", () => {
-    expect(formatMeetingDate(start)).toBe("Tuesday, September 29, 2026");
-    expect(formatMeetingTime(start, end)).toBe("7:00 to 8:30 pm");
+  it("shows both meridiems when the range crosses noon or midnight", () => {
+    expect(formatMeetingTime(new Date("2026-01-28T16:00:00Z"), new Date("2026-01-28T17:30:00Z"))).toBe("11:00 am to 12:30 pm");
+    expect(formatMeetingTime(new Date("2026-09-29T23:00:00Z"), new Date("2026-09-30T05:00:00Z"))).toBe("7:00 pm to 1:00 am");
+  });
+
+  it("uses standard time in winter", () => {
+    expect(formatMeetingTime(new Date("2026-11-18T00:00:00Z"), new Date("2026-11-18T01:30:00Z"))).toBe("7:00 to 8:30 pm");
   });
 
   it("formats a bare calendar date in New York time", () => {
@@ -103,12 +73,11 @@ describe("formatMeetingWeekday and formatMeetingMonthDay", () => {
     expect(formatMeetingMonthDay(midnight)).toBe("December 1");
   });
 
-  it("are what formatMeetingDate is composed from, with the New York year", () => {
-    const start = new Date("2026-09-29T23:00:00Z");
-    expect(formatMeetingDate(start)).toBe("Tuesday, September 29, 2026");
-    expect(formatMeetingDate(start)).toBe(`${formatMeetingWeekday(start)}, ${formatMeetingMonthDay(start)}, 2026`);
+  it("stay on New Year's Eve until New York's midnight", () => {
     // 04:59:59 UTC on January 1, 2027 is still New Year's Eve in Arlington.
-    expect(formatMeetingDate(new Date("2027-01-01T04:59:59Z"))).toBe("Thursday, December 31, 2026");
+    const lastSecond = new Date("2027-01-01T04:59:59Z");
+    expect(formatMeetingWeekday(lastSecond)).toBe("Thursday");
+    expect(formatMeetingMonthDay(lastSecond)).toBe("December 31");
   });
 });
 

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { boardSchema, resourcesSchema, settingsSchema } from "../src/content.config";
-import { getBoard, getResources, getSettings, isConfigured, parseContent, type Settings } from "../src/lib/settings";
+import { getBoard, getResources, getSettings, parseContent } from "../src/lib/settings";
 
 async function load(file: string): Promise<unknown> {
   return parse(await fs.readFile(`src/content/${file}`, "utf8"));
@@ -38,11 +38,23 @@ describe("settingsSchema", () => {
     expect(() => settingsSchema.parse(withExtra)).toThrow();
   });
 
-  it("rejects a misspelled top-level key", async () => {
+  it("rejects a misspelled top-level key, as an unrecognized key and for no other reason", async () => {
     const settings = (await load("settings.yaml")) as Record<string, unknown>;
+    expect(settingsSchema.safeParse(settings).success).toBe(true);
+    // The valid file plus one extra key: the extra key is the only thing wrong, so it is the only issue.
+    const extra = settingsSchema.safeParse({ ...settings, calandarId: "x" });
+    expect(extra.success).toBe(false);
+    expect(extra.error?.issues.map((i) => ({ code: i.code, keys: "keys" in i ? i.keys : undefined, path: i.path }))).toEqual([
+      { code: "unrecognized_keys", keys: ["calandarId"], path: [] },
+    ]);
+    // The realistic typo, where the misspelling replaces the real key: both problems are reported, separately.
     const { calendarId, ...rest } = settings;
-    expect(() => settingsSchema.parse({ ...rest, calandarId: calendarId })).toThrow();
-    expect(() => settingsSchema.parse({ ...settings, calandarId: "x" })).toThrow();
+    const renamed = settingsSchema.safeParse({ ...rest, calandarId: calendarId });
+    expect(renamed.success).toBe(false);
+    const issues = renamed.error?.issues ?? [];
+    expect(issues).toHaveLength(2);
+    expect(issues.some((i) => i.code === "unrecognized_keys" && "keys" in i && i.keys.join() === "calandarId")).toBe(true);
+    expect(issues.some((i) => i.path.join(".") === "calendarId")).toBe(true);
   });
 
   it("requires joinFormUrl to be blank or an https:// URL", async () => {
@@ -95,35 +107,6 @@ describe("parseContent error messages", () => {
   it("names the key for an unknown key", async () => {
     const text = await fs.readFile("src/content/settings.yaml", "utf8");
     expect(() => parseContent("settings.yaml", `${text}calandarId: x\n`, settingsSchema)).toThrow(/settings\.yaml: .*calandarId/);
-  });
-});
-
-describe("isConfigured", () => {
-  it("reports each key as set or blank, from the values given", async () => {
-    const settings = settingsSchema.parse(await load("settings.yaml"));
-    const filled: Settings = {
-      ...settings,
-      calendarId: "cal@group.calendar.google.com",
-      joinFormUrl: "https://forms.example.org/join",
-      drive: Object.fromEntries(Object.keys(settings.drive).map((k) => [k, `id-${k}`])) as Settings["drive"],
-    };
-    const status = isConfigured(filled);
-    expect(status.joinFormUrl).toBe(true);
-    expect(status.calendarId).toBe(true);
-    for (const key of Object.keys(filled.drive)) {
-      expect(status.drive[key as keyof typeof status.drive], `drive.${key}`).toBe(true);
-    }
-    const blank = isConfigured({ ...filled, joinFormUrl: "" });
-    expect(blank.joinFormUrl).toBe(false);
-  });
-
-  it("treats whitespace-only values as blank", async () => {
-    const base: Settings = settingsSchema.parse(await load("settings.yaml"));
-    const settings: Settings = { ...base, drive: { ...base.drive, bylaws: "id-bylaws", letters: "id-letters" } };
-    const status = isConfigured({ ...settings, calendarId: "  ", drive: { ...settings.drive, letters: "" } });
-    expect(status.calendarId).toBe(false);
-    expect(status.drive.letters).toBe(false);
-    expect(status.drive.bylaws).toBe(true);
   });
 });
 

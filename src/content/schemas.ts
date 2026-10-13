@@ -6,7 +6,7 @@ const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "expected YYYY-MM");
 // Every object is strict: board members edit these files in the GitHub web editor, so a typo such as
 // `calandarId` must fail the build instead of silently falling back to a blank.
 
-/** Blank is allowed by the schema; `isConfigured` reports which values are still blank. */
+/** Blank is allowed by the schema: a blank folder ID shows that section's fallback, and the build's health line says "unconfigured". */
 const driveId = z.string();
 
 export const settingsSchema = z.strictObject({
