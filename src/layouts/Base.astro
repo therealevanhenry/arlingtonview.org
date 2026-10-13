@@ -30,11 +30,13 @@ const pageTitle = home || title === undefined ? siteName : `${title} | ${siteNam
 const canonical = Astro.site
   ? new URL(withBase(stripBase(Astro.url.pathname)), Astro.site).href
   : undefined;
-// Only the canonical site may be indexed. A build for any other origin (the github.io preview, where
+// Only the canonical site may be indexed. A build for any other host (the github.io preview, where
 // the deploy workflow passes the origin GitHub Pages reports) says noindex, so the preview never
-// competes with the real address in search results. `siteUrl`, `site` in astro.config.mjs, and
-// public/CNAME must agree (tests/site-identity.test.ts), so a local or apex build is indexable.
-const indexable = Astro.site !== undefined && Astro.site.origin === new URL(siteUrl).origin;
+// competes with the real address in search results. Hosts are compared, not whole origins: Pages can
+// report the custom domain as http:// until "Enforce HTTPS" is switched on, and the build that goes
+// live at the DNS switch must be indexable. `siteUrl`, `site` in astro.config.mjs, and public/CNAME
+// must agree (tests/site-identity.test.ts), so a local or apex build is indexable.
+const indexable = Astro.site !== undefined && Astro.site.host === new URL(siteUrl).host;
 ---
 
 <!doctype html>

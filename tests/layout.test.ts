@@ -207,7 +207,7 @@ describe("Base", () => {
       return c.renderToString(Base, { request: at("/meetings/"), props: { title: "Meetings" }, slots: { default: "<h1>Meetings</h1>" } });
     };
 
-    it("says nothing when the build's origin is the origin of settings.siteUrl", async () => {
+    it("says nothing when the build's host is the host of settings.siteUrl (the apex over https)", async () => {
       // Read at test time: the rule is the comparison, not the value.
       const { siteUrl } = await getSettings();
       for (const site of [siteUrl, `${new URL(siteUrl).origin}/`, `${new URL(siteUrl).origin}/some/base/`]) {
@@ -215,10 +215,20 @@ describe("Base", () => {
       }
     });
 
-    it("says noindex when the build is for another origin, e.g. the github.io preview", async () => {
+    it("compares hosts, not schemes: the apex over http is indexable too", async () => {
+      // GitHub Pages can report the custom domain as http:// until "Enforce HTTPS" is switched on. The
+      // build that goes live at the DNS switch must not tell search engines to stay away.
+      const { siteUrl } = await getSettings();
+      const host = new URL(siteUrl).host;
+      for (const site of [`http://${host}`, `http://${host}/`, `HTTP://${host.toUpperCase()}/`]) {
+        expect(await render(site), site).not.toContain('name="robots"');
+      }
+    });
+
+    it("says noindex when the build is for another host, e.g. the github.io preview", async () => {
       const { siteUrl } = await getSettings();
       const canonicalHost = new URL(siteUrl).host;
-      for (const site of ["https://therealevanhenry.github.io", `https://www.${canonicalHost}`, `https://preview.${canonicalHost}`]) {
+      for (const site of ["https://therealevanhenry.github.io", "http://therealevanhenry.github.io", `https://www.${canonicalHost}`, `https://preview.${canonicalHost}`, `https://${canonicalHost}.example.org`]) {
         const html = await render(site);
         expect(countOccurrences(html, NOINDEX), site).toBe(1);
         expect(html.indexOf(NOINDEX), site).toBeLessThan(html.indexOf("</head>"));
