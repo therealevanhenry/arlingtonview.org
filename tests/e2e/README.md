@@ -28,9 +28,16 @@ git-ignored.
   first in tab order and visible, nav focus outline, a full-page screenshot artifact.
 - `a11y.spec.ts`: axe-core with WCAG 2.0/2.1 A and AA tags, zero violations, no rule disabled.
 - `home-hero.spec.ts`: the hero at 375 and 1280px (type size, one line, zones side by side or stacked, cornice
-  projection), the virtual and in-person states, and the quick-links column count (1, 2, or 4 at seven widths).
-- `meetings.spec.ts`, `documents.spec.ts`: the populated Meetings and Documents previews, plus the real
-  OFFLINE pages (meeting rule, folder links, no conferencing link).
+  projection), the virtual and in-person states, the space above the Agenda link, a long unbroken location
+  wrapping inside the notice, and the quick-links column count (1, 2, or 4 at seven widths).
+- `meetings.spec.ts`, `documents.spec.ts`: the populated Meetings and Documents previews (row headers, no two
+  links with the same accessible name, long unbroken names wrapping), plus the real OFFLINE pages (meeting
+  rule, folder links, no conferencing link).
+
+The fixtures carry three strings with no break opportunity on purpose (`LONG_REAL_NAME`, a real 43-character
+file name from the owner's Drive; `LONG_MATERIAL_NAME`, 60 characters; `LONG_LOCATION`), so the 320px
+no-horizontal-scroll check in `pages.spec.ts` fails if a name or a location can widen the page.
+`support.ts` repeats the three values, because the specs do not import the fixture module.
 
 Tap targets: every link and button must be 24x24 CSS px, or have 24px of clear space around it (WCAG 2.5.8
 spacing exception only; no inline-link exemption is applied, so the roughly 22px-tall inline links pass because nothing sits within 24px of them). `.button` must be 44px tall.

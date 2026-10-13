@@ -6,7 +6,7 @@ Arlington View was formerly known as Johnson's Hill.
 
 ## History and thematic maps
 
-Historical aerial and thematic maps for 1934, 1956, 1962, 1969, 1974, 1983, and 1989 come from Arlington County GIS.
+The aerial photographs of the neighborhood shown below, from 1934, 1956, 1962, 1969, 1974, 1983, and 1989, come from Arlington County GIS.
 
 ## Further reading and county map resources
 

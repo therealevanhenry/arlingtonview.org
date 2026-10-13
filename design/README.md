@@ -17,7 +17,8 @@ The idea: indigo ink on warm paper, set like a well-kept public notice. Everythi
 rules. The one flourish, the cornice, comes from the house itself. The home page takes the idea literally:
 its hero is the next meeting, set as a notice posted on the wall of the house (see "The meeting notice").
 
-Hard limits: no client JavaScript, no imagery beyond the logo, no shadows, no rounded cards, no motion,
+Hard limits: no client JavaScript, no imagery beyond the logo and the History page's aerial photographs
+(see "History photographs"), no shadows, no rounded cards, no motion,
 no gradients except the cornice dentils, no italics (none are loaded), no all-caps or letterspaced labels,
 no icons or arrows in link or button text, no dark mode at launch. Headings and labels are sentence case.
 
@@ -73,9 +74,7 @@ artwork would. `--indigo` stays `#3A3796` as the spec pins it.
 | `--step-1` | 1.3125rem (21) | h3, entry titles |
 | `--step-2` | 1.75rem (28) | h2; h1 on phones |
 | `--step-3` | 2.25rem (36) | h1 from 40rem up |
-| `--step-4` | 3rem (48) | reserved |
-| `--step-display` | `clamp(2.25rem, 1.5rem + 3.5vw, 3.75rem)` | reserved; it set the next-meeting date before `--step-hero` took over |
-| `--step-hero` | `clamp(3.25rem, 1.5rem + 8vw, 7.5rem)` | the month and day in the home meeting notice only (`.notice-monthday`) |
+| `--step-hero` | `clamp(3.25rem, 1.5rem + 8vw, 7.5rem)` | the month and day in the home meeting notice only (`.notice-monthday`). The 7.5rem maximum is a ceiling the date does not reach where container units are supported: the `19.2cqi` cap (see "The meeting notice") is the smaller of the two from 56rem up, about 111px at the full container width |
 
 - Line height: body 1.55, headings 1.15, display 1.05, the hero month and day 0.95. Prose measure
   `--measure: 70ch`.
@@ -107,9 +106,18 @@ rows, list entries), not every block.
   centered in the viewport, with `--gutter` side padding: 16px at phone width, growing to `--space-6`.
 - Prose sits in `.measure` (70ch) at the left edge of the container. The empty right side at wide widths
   is deliberate.
-- One general breakpoint, 40rem, phone-first. The home meeting notice adds two of its own: 48rem, where
-  the cornice steps up to its larger scale, and 56rem, where the notice becomes two columns. No fixed
-  widths; nothing scrolls horizontally at 320px.
+- Phone-first, with five breakpoints in the stylesheet, all `min-width` except the table restack:
+  - 36rem: the four quick links go from one column to 2 x 2 (`.entries-four`).
+  - 40rem: the general one. The `h1` and the nav step up, notices get more padding, the section gap
+    grows, the schedule becomes a two-column grid, the History photographs go to two columns, and (as a
+    `max-width` query just below it) tables stop restacking.
+  - 48rem: the cornice steps up to its larger scale.
+  - 56rem: the meeting notice becomes two columns, and the About drawing moves beside the text.
+  - 64rem: the quick links go four across, the History photographs three across, and the Resources
+    groups flow into two columns.
+- No fixed widths; nothing scrolls horizontally at 320px. Text that comes from Drive or the calendar and
+  may be one long unbroken string (file names, a meeting's location) carries `overflow-wrap: anywhere`
+  (`.file`, `.schedule-details`, `.notice-place`).
 - Header: mark and wordmark on the left, nav on the right. When they do not fit on one line the nav wraps
   beneath the brand as a plain flex-wrapped list. No menu button.
 
@@ -154,8 +162,9 @@ a lockup the type carries. It is the one bold thing on the page; everything arou
   (`.notice-heading`).
 - Date lockup: one `time` element holding two lines. The weekday (`.notice-weekday`) is Garamond 500 at
   `--step-2`. The month and day (`.notice-monthday`) are Garamond 400 at `--step-hero`, line height 0.95,
-  `letter-spacing: -0.01em`, lining figures, never wrapping. The year is not shown; the full date with the
-  year appears wherever `formatMeetingRange` or `formatMeetingDate` is used.
+  `letter-spacing: -0.01em`, lining figures, never wrapping. The year is not shown, here or in the
+  schedule of upcoming meetings (which is grouped under a year heading instead). Dates with the year
+  appear in the past-meetings table, beside files, and in the footer's "Documents updated" line.
 - The month and day are capped by their column so they never overflow. Inside `@supports (width: 1cqi)`,
   `.notice-date` is an inline-size container and the font size is `min(var(--step-hero), 19.2cqi)`: the
   widest dates (the two-digit days of November, then September) measure 5.15em at this tracking, so 19.2%
@@ -170,11 +179,14 @@ a lockup the type carries. It is the one bold thing on the page; everything arou
   the weekday sets.
 - Two zones, split by meaning. The first is when and where (`.notice-when`): the lockup, then directly
   beneath it the time (`.notice-time`, Garamond 400 at `--step-2`, lining figures) and the place at body
-  size (`Virtual meeting` or the location). The time and place are the continuation of the lockup, not a
+  size (`.notice-place`: the location as written, or `Virtual meeting` when it names no place; it may
+  wrap anywhere, since a location can be one long unbroken string). The time and place are the continuation of the lockup, not a
   separate block: the gap under the month and day is `max(var(--space-3), 0.2em)`, which is `--space-3` on
   phones and grows with the type so the descenders of p, y, and g clear the time. The second zone is how
   to attend and what to do (`.notice-details`, a `.stack`): the virtual-link note with the contact link
-  (`.notice-note`, 34ch), the agenda link when there is one, and the `.actions` row. An in-person meeting
+  (`.notice-note`, 34ch; shown whenever the meeting is virtual, including a hybrid one whose venue is
+  printed), the agenda link when there is one (`.notice-agenda`, `--space-3` under the note so that it
+  does not crowd the contact link that ends the note), and the `.actions` row. An in-person meeting
   with no agenda leaves only the actions row there.
 - Layout: one column under 56rem, in reading order (heading, lockup, time, place, note, agenda, actions),
   the second zone following the first after `--space-5`, with no dividing rule. From 56rem, two columns,
@@ -216,21 +228,21 @@ by source order and nothing needs `!important`.
 | `.callout` | same ground and padding, no cornice, no accent bar |
 | `.cornice` | see "The cornice"; home meeting notice only |
 | `.notice-hero` | modifier on `.notice.cornice` for the home hero: the grid, the wider padding, and the top padding that clears the cornice. See "The meeting notice" |
-| `.notice-heading`, `.notice-when`, `.notice-date`, `.notice-weekday`, `.notice-monthday`, `.notice-time`, `.notice-rule`, `.notice-details`, `.notice-note` | the parts of the meeting notice; not for use elsewhere. `.notice-when` is a grouping hook with no rule of its own |
+| `.notice-heading`, `.notice-when`, `.notice-date`, `.notice-weekday`, `.notice-monthday`, `.notice-time`, `.notice-place`, `.notice-rule`, `.notice-details`, `.notice-note`, `.notice-agenda` | the parts of the meeting notice; not for use elsewhere. `.notice-when` is a grouping hook with no rule of its own |
 | `.lead` | an opening paragraph: Garamond 400, `clamp(1.3125rem, 1.1rem + 0.9vw, 1.5rem)`, line height 1.35, `--ink`, at most 44rem wide. One per page, directly under the hero or the `h1`; it tops out a step below the notice's weekday and time so it does not compete with them |
 | `.entries` / `.entry` / `.entry-title` | ruled entry list: auto-fit grid (min `min(14rem, 100%)`), each entry a 1px top rule, a Garamond heading link, one line of body text. Auto-fit can strand one entry on a last row; for a set of four use `.entries-four` |
 | `.entries-four` | modifier on `.entries` for sets of exactly four: 1 column, 2 x 2 from 36rem, 4 across from 64rem (`min-width` queries). Columns are 249px wide at the 36rem switch and 216px at the 64rem switch (gutters and 2rem gap included), so none is under 12rem. Use it instead of auto-fit, which always has a width band that lands 3 + 1 |
-| `.table` | left-aligned table with 1px row rules and tabular figures. Under 40rem each row restacks as a block and each cell is labelled from `td[data-label]`, so every `td` needs a `data-label` |
-| `.files` / `.file` / `.file-date` | plain list: a link plus a secondary date. On the Documents page the date is the one parsed from the file name (`June 24, 2026`, `June 2026` when only the month is known); a file with no parsed date shows its Drive modified time prefixed `Updated` (the word sits outside the `<time>`), so it is never mistaken for the document's own date. Recently added is under that heading and shows the bare modified date |
-| `.schedule` / `.schedule-item` / `.schedule-date` / `.schedule-details` | the upcoming-meetings schedule (`MeetingList.astro`, Meetings page only): an `ol` capped at 44rem, grouped under an `h3` per New York year. Each item is a 1px `--rule` top border (none on the first of a group) with `--space-4` above and below. The date is EB Garamond 500 at `--step-1`, `--ink`, no year; the details are body sans in a wrapping flex row (time, place in `.soft`, `Agenda` link) with a `--space-4` column gap and no separator characters. Below 40rem the details sit `--space-1` under the date; from 40rem the item is a grid, date column `minmax(14rem, 18rem)`, details `1fr`, first baselines aligned |
+| `.table` | left-aligned table with 1px row rules and tabular figures. Under 40rem each row restacks as a block and each cell is labelled from its `data-label`, so every body cell (`td`, or a row-header `th`) needs one. A row header in the body (`th scope="row"`) is set at the regular weight, like the cells beside it |
+| `.files` / `.file` / `.file-date` | plain list: a link plus a secondary date. On the Documents page the date is the one parsed from the file name (`June 24, 2026`, `June 2026` when only the month is known); a file with no parsed date shows its Drive modified time prefixed `Updated` (the word sits outside the `<time>`), so it is never mistaken for the document's own date. The home page's "Recently updated" list is under that heading and shows the bare modified date. A name with no break opportunity wraps anywhere (`overflow-wrap: anywhere` on `.file`); the date never breaks |
+| `.schedule` / `.schedule-item` / `.schedule-date` / `.schedule-details` | the upcoming-meetings schedule (`MeetingList.astro`, Meetings page only): an `ol` capped at 44rem, grouped under an `h3` per New York year. Each item is a 1px `--rule` top border (none on the first of a group) with `--space-4` above and below. The date is EB Garamond 500 at `--step-1`, `--ink`, no year; the details are body sans in a wrapping flex row (time, place in `.soft`, `Agenda` link) with a `--space-4` column gap and no separator characters; the place may wrap anywhere. Below 40rem the details sit `--space-1` under the date; from 40rem the item is a grid, date column `minmax(14rem, 18rem)`, details `1fr`, first baselines aligned |
 | `.prose` / `.prose-lead` | wrapper for rendered Markdown (the `pages` collection), which cannot carry classes. The one place nested selectors are allowed, all in `:where()`: every child after the first gets `--space-4` above (`.prose > :where(* + *)`), an `h2` gets `--space-6` above and `--space-3` to what follows; every part after the class is in `:where()`, so each rule is one class of specificity. `.prose-lead` sets the first paragraph as a lead (same declarations as `.lead`, duplicated because the paragraph cannot take the class). Used on About, History, Join |
 | `.about-intro` / `.about-text` / `.about-drawing` / `.about-drawing-art` | About only: `.about-intro` is a grid of exactly two children, `.about-text` (the rendered prose, which also carries `.prose .prose-lead`) and `.about-drawing` (holding the `svg.about-drawing-art`, the full house drawing from `logo.svg`, the page's one moment). No descendant selectors: each element carries its own class. Under 56rem it is one column, the drawing after the whole intro prose, 180px tall, indigo. From 56rem it is two columns, `--measure` and 15rem (240px), `--space-8` apart, the drawing top-aligned |
 | `.photos` / `.photo` / `.photo-caption` | History only (`HistoryPhotos.astro`): the aerial photographs, a `role="list"` grid of `figure`s, 1 column, 2 from 40rem, 3 from 64rem, aligned to the top of each row, each at its own aspect ratio. The caption is the year in EB Garamond at `--step-1`. No borders, links, or lightbox |
 | `.link-groups` / `.link-group` / `.link-list` / `.link-item` | Resources only (`LinkGroups.astro`): an `h2` over a ruled list capped at 44rem; a row is the link then its note in `.soft` (wrapping, `--space-4` gap, no separator characters). From 64rem `.link-groups` is two CSS columns (balanced, a group is never split), which reads better than one long column: 20 links in four groups fit one screen at 1280px |
 | `.schedule` on a `dl` | the board roster (`BoardTable.astro`, About): a `dl` inside `.schedule`, each role/name pair a `div.schedule-item` with `dt.schedule-date` (role, Garamond label) and `dd.schedule-details` (name, or `.soft` Vacant). Block captains use the same rows (`Block 4` and its names). The kind of role (Elected officers, Appointed, Honorary) is carried by `h3` headings, not color or badges |
-| `.table-archive` | modifier on `.table` for the past-meetings table: `max-width: 52rem`; the Date, Agenda, and Minutes cells never wrap (`Not posted`, `Minutes (draft)`), Materials wraps |
+| `.table-archive` | modifier on `.table` for the past-meetings table: `max-width: 52rem`; the Date (the row header), Agenda, and Minutes cells never wrap (`Not posted`, `Not available`, `Minutes (draft)`), Materials wraps, anywhere if it must |
 | `.file-group` | wraps one `.files` list (and its sub-heading) on the Documents page: `max-width: 44rem` |
-| `.soft` | text in `--ink-soft`; used for "Not posted" in the past-meetings table |
+| `.soft` | text in `--ink-soft`; used for "Not posted" and "Not available" in the past-meetings table |
 | `.cell-empty` | on a `td` with nothing in it: `display: none` under 40rem only (the stacked layout would otherwise print a bare label); on wider screens the cell stays so the columns line up |
 | `.site-header`, `.brand`, `.site-nav` and friends | `src/components/Header.astro` |
 | `.site-footer` and friends | `src/components/Footer.astro` |
@@ -254,7 +266,12 @@ Markup conventions:
   path through as written and never adds a slash, so a missing one is a bug at the call site (GitHub
   Pages would answer it with a redirect). `isCurrentSection()` and the canonical link accept either form.
 - `.table` loses native table semantics in some browsers once it restacks. Tables with more than a
-  couple of columns should add `role="table"`, `role="row"`, and `role="cell"` in markup.
+  couple of columns should add `role="table"`, `role="row"`, `role="cell"`, and for a row's header cell
+  `role="rowheader"` in markup.
+- Link text that repeats on a page gets visually hidden context inside the link
+  (`<span class="visually-hidden">`): each "Open folder in Google Drive" names its section, and "Agenda"
+  and "Minutes" in the past-meetings table and the schedule name their meeting's date. What is drawn
+  does not change.
 
 ## Logo
 
