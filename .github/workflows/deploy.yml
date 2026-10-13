@@ -131,8 +131,9 @@ jobs:
           echo "value=$digest" >> "$GITHUB_OUTPUT"
 
       # What is live right now (the github.io preview before DNS cutover, the apex after).
-      # Any failure just means "different" (the hash) or "no baseline" (the file counts); the two scripts
-      # that read these files validate them.
+      # For the hash, any failure just means "different". For the file counts it does not: only a 404
+      # means "nothing to compare with"; a fetch that fails any other way is retried, and if it still
+      # fails the run is treated as degraded (scripts/drive-drop.sh has the three outcomes).
       - name: Fetch the deployed build hash and file counts
         id: deployed
         run: |
@@ -140,20 +141,23 @@ jobs:
           bust="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           status=$(curl -sS --globoff --max-time 20 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-hash.txt" -w '%{http_code}' "$BASE_URL/build-hash.txt?$bust" || true)
           echo "status=${status:-000}" >> "$GITHUB_OUTPUT"
-          # --fail: an error page is not saved in place of the file.
+          # Up to 3 retries on a timeout, a connection error, or a 5xx; at most 90 seconds in all. A 404
+          # is an answer, not an error, and is not retried. curl prints "000" when no answer came.
           rm -f "$RUNNER_TEMP/deployed-meta.json"
-          curl -sS --fail --globoff --max-time 20 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-meta.json" "$BASE_URL/build-meta.json?$bust" \
-            || rm -f "$RUNNER_TEMP/deployed-meta.json"
+          meta_status=$(curl -sS --globoff --max-time 20 --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 90 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/deployed-meta.json" -w '%{http_code}' "$BASE_URL/build-meta.json?$bust" || true)
+          meta_status=${meta_status:-000}
+          echo "meta_status=${meta_status: -3}" >> "$GITHUB_OUTPUT"
         env:
           BASE_URL: ${{ steps.pages.outputs.base_url }}
 
       # Drive answers HTTP 200 with fewer files when sharing is removed from a subfolder, so a listing
-      # that "worked" can still be wrong. A root that lost more than half its files counts as degraded.
+      # that "worked" can still be wrong. A root that lost more than half its files counts as degraded,
+      # and so does a baseline that could not be read (exit 3): not knowing is not "no drop".
       - name: Compare Drive file counts with the live site
         id: drop
         run: |
           rc=0
-          report=$(scripts/drive-drop.sh "$RUNNER_TEMP/deployed-meta.json" dist/build-meta.json) || rc=$?
+          report=$(scripts/drive-drop.sh "$RUNNER_TEMP/deployed-meta.json" dist/build-meta.json "$LIVE_META_STATUS") || rc=$?
           printf '%s\n' "$report"
           case "$rc" in
             0) echo "dropped=false" >> "$GITHUB_OUTPUT" ;;
@@ -161,8 +165,14 @@ jobs:
               while IFS= read -r line; do echo "::warning::${line}"; done <<< "$report"
               echo "dropped=true" >> "$GITHUB_OUTPUT"
               ;;
+            3)
+              echo "::warning::${report}"
+              echo "dropped=unknown" >> "$GITHUB_OUTPUT"
+              ;;
             *) exit "$rc" ;;
           esac
+        env:
+          LIVE_META_STATUS: ${{ steps.deployed.outputs.meta_status }}
 
       - name: Decide whether to deploy
         id: decide

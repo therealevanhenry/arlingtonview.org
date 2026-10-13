@@ -61,9 +61,10 @@ function ensureActive_(workflowFile) {
 
 function dispatch_(workflowFile) {
   ensureActive_(workflowFile);
-  // "Create a workflow dispatch event". With the API version pinned in request_ (2022-11-28) and no
-  // return_run_details parameter, GitHub answers 204 with an empty body. The 2026-03-10 API version
-  // answers 200 with the run's details instead: if the version header above is ever raised, expect 200.
+  // "Create a workflow dispatch event". The 204 expected below holds for the API version pinned in
+  // request_ (X-GitHub-Api-Version: 2022-11-28) with no return_run_details parameter: an empty answer.
+  // The 2026-03-10 API version answers 200 with the run's details instead. Whoever raises the pinned
+  // version must revisit the status passed to expect_ here.
   var path = '/actions/workflows/' + workflowFile + '/dispatches';
   expect_(request_('post', path, { ref: 'main' }), 204, 'Start ' + workflowFile);
 }

@@ -1,6 +1,6 @@
 /** Rules the four workflow files must keep. They are read as YAML at test time; nothing here runs a workflow. */
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -105,25 +105,75 @@ describe("deploy.yml: the health, drop, and decide steps, run as GitHub runs the
     return { code: r.status, stdout: r.stdout, outputs };
   }
 
-  /** One whole decision: a build log, the two build-meta files, the live hash, and the checkbox. */
-  function decide(opts: { health: string | null; live?: Record<string, number>; fresh: Record<string, number>; liveHash?: string; allow?: boolean }) {
+  /**
+   * A stand-in for curl on PATH, so the fetch step runs as written without a network. It answers the
+   * two URLs the step asks for from `live`: `-o <file>` receives the body, `-w '%{http_code}'` the
+   * status. A status of "000" plays a request that never got an answer (curl's own exit code 28).
+   */
+  type Live = { hash?: [status: string, body?: string]; meta?: [status: string, body?: string] };
+  function fakeCurl(live: Live): string {
+    const bin = join(dir, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(dir, "curl-calls.txt"), "");
+    // Each answer's body sits in a file the stand-in copies, so no body ever passes through shell quoting.
+    const answer = (which: "hash" | "meta") => {
+      const [status, body] = live[which] ?? ["404", "<html>Page not found</html>"];
+      const bodyFile = join(dir, `live-${which}.body`);
+      if (body !== undefined) writeFileSync(bodyFile, body);
+      return `${body === undefined ? ":" : `cat "${bodyFile}" > "$out"`}; printf '%s' ${status}; ${status === "000" ? "exit 28" : "exit 0"}`;
+    };
+    writeFileSync(
+      join(bin, "curl"),
+      `#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${dir}/curl-calls.txt"
+out=/dev/null
+args=("$@")
+for ((i = 0; i < \${#args[@]}; i++)); do [ "\${args[i]}" = "-o" ] && out=\${args[i+1]}; done
+url=\${args[\${#args[@]}-1]}
+case "$url" in
+  */build-hash.txt\?*) ${answer("hash")} ;;
+  */build-meta.json\?*) ${answer("meta")} ;;
+  *) echo "unexpected URL: $url" >&2; exit 2 ;;
+esac
+`,
+    );
+    chmodSync(join(bin, "curl"), 0o755);
+    return bin;
+  }
+
+  /** One whole decision: a build log, the new build-meta.json, what the live site answers, and the checkbox. */
+  function decide(opts: {
+    health: string | null;
+    /** The live site's file counts (HTTP 200). Omit, with `meta` unset, for a live site without the file (HTTP 404). */
+    live?: Record<string, number>;
+    /** Overrides the live build-meta.json answer: [status, body]. */
+    meta?: [string, string?];
+    fresh: Record<string, number>;
+    liveHash?: string;
+    allow?: boolean;
+  }) {
     writeFileSync(join(dir, "tmp/build.log"), opts.health === null ? "12:00 [build] done\n" : `12:00 [build] start\n[site-data] health: ${opts.health}\n`);
     writeFileSync(join(dir, "dist/build-meta.json"), JSON.stringify({ driveFileCounts: opts.fresh }));
-    if (opts.live) writeFileSync(join(dir, "tmp/deployed-meta.json"), JSON.stringify({ driveFileCounts: opts.live }));
-    if (opts.liveHash) writeFileSync(join(dir, "tmp/deployed-hash.txt"), `${opts.liveHash}\n`);
+    const bin = fakeCurl({
+      hash: opts.liveHash ? ["200", `${opts.liveHash}\n`] : undefined,
+      meta: opts.meta ?? (opts.live ? ["200", JSON.stringify({ driveFileCounts: opts.live })] : undefined),
+    });
+    const fetched = runStep("deployed", { PATH: `${bin}:${process.env.PATH ?? ""}`, BASE_URL: "https://live.example.org/base", GITHUB_RUN_ID: "7", GITHUB_RUN_ATTEMPT: "1" });
+    // The fetch step never fails the run by itself: what it could not get is a status for the steps after it.
+    if (fetched.code !== 0) throw new Error(`the fetch step exited ${fetched.code}: ${fetched.stdout}`);
     const health = runStep("health");
-    if (health.code !== 0) return { failedAt: "health", health };
-    const drop = runStep("drop");
-    if (drop.code !== 0) return { failedAt: "drop", health, drop };
+    if (health.code !== 0) return { failedAt: "health", fetched, health };
+    const drop = runStep("drop", { LIVE_META_STATUS: fetched.outputs.meta_status ?? "" });
+    if (drop.code !== 0) return { failedAt: "drop", fetched, health, drop };
     const decision = runStep("decide", {
       NEW_HASH: NEW,
-      DEPLOYED_STATUS: opts.liveHash ? "200" : "404",
+      DEPLOYED_STATUS: fetched.outputs.status ?? "",
       DEPLOYED_FILE: join(dir, "tmp/deployed-hash.txt"),
       DEGRADED: health.outputs.degraded ?? "",
       DRIVE_DROP: drop.outputs.dropped ?? "",
       ALLOW_DEGRADED: String(opts.allow === true),
     });
-    return { health, drop, decision };
+    return { fetched, health, drop, decision };
   }
   const FIVE = { bylaws: 6, meetings: 40, presentations: 9, letters: 5, neighborhoodPlan: 4 };
 
@@ -133,15 +183,33 @@ describe("deploy.yml: the health, drop, and decide steps, run as GitHub runs the
       DRIVE_DROP: "${{ steps.drop.outputs.dropped }}",
       ALLOW_DEGRADED: "${{ inputs.allow_degraded == true }}",
     });
-    expect(step("drop").run).toContain('scripts/drive-drop.sh "$RUNNER_TEMP/deployed-meta.json" dist/build-meta.json');
-    expect(step("deployed").run).toContain('-o "$RUNNER_TEMP/deployed-meta.json"');
-    expect(step("deployed").run).toContain('-o "$RUNNER_TEMP/deployed-hash.txt"');
+    expect(step("decide").env).toMatchObject({ DEPLOYED_STATUS: "${{ steps.deployed.outputs.status }}", DEPLOYED_FILE: "${{ runner.temp }}/deployed-hash.txt" });
+    expect(step("drop").env).toEqual({ LIVE_META_STATUS: "${{ steps.deployed.outputs.meta_status }}" });
+    expect(step("drop").run).toContain('scripts/drive-drop.sh "$RUNNER_TEMP/deployed-meta.json" dist/build-meta.json "$LIVE_META_STATUS"');
     // The record and upload steps, and the deploy job, hang on the decision alone.
     const gated = (build.steps ?? []).filter((s) => s.if !== undefined).map((s) => s.if);
     expect(gated).toEqual(["steps.decide.outputs.deploy == 'true'", "steps.decide.outputs.deploy == 'true'"]);
     expect(build.outputs).toEqual({ deploy: "${{ steps.decide.outputs.deploy }}" });
     expect(one("deploy.yml").yaml.jobs.deploy).toMatchObject({ needs: "build", if: "needs.build.outputs.deploy == 'true'" });
     expect(build).toMatchObject({ needs: "tip", if: "needs.tip.outputs.current == 'true'" });
+  });
+
+  it("fetches the live file counts with bounded retries, and the hash and the counts from the live base URL", () => {
+    const run = step("deployed").run as string;
+    const metaFetch = run.split("\n").find((l) => l.includes("build-meta.json") && l.includes("curl")) ?? "";
+    expect(metaFetch).toContain("--retry 3");
+    expect(metaFetch).toContain("--retry-all-errors");
+    expect(metaFetch).toMatch(/--retry-max-time \d+/);
+    expect(metaFetch).toMatch(/--max-time \d+/);
+    // --fail would make a 404 an error (retried, and indistinguishable from an outage).
+    expect(metaFetch).not.toContain("--fail");
+    const r = decide({ health: "ok", live: FIVE, fresh: FIVE, liveHash: OLD });
+    expect(r.fetched.outputs).toEqual({ status: "200", meta_status: "200" });
+    const calls = readFileSync(join(dir, "curl-calls.txt"), "utf8").trim().split("\n");
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatch(/https:\/\/live\.example\.org\/base\/build-hash\.txt\?run=7-1$/);
+    expect(calls[1]).toMatch(/https:\/\/live\.example\.org\/base\/build-meta\.json\?run=7-1$/);
+    expect(readFileSync(join(dir, "tmp/deployed-meta.json"), "utf8")).toBe(JSON.stringify({ driveFileCounts: FIVE }));
   });
 
   it("healthy and changed: deploys", () => {
@@ -157,8 +225,11 @@ describe("deploy.yml: the health, drop, and decide steps, run as GitHub runs the
     expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "unchanged" });
   });
 
-  it("no key, nothing listed on the live site: warns and deploys", () => {
+  it("no key, and the live site has no build-meta.json (HTTP 404, no baseline): warns and deploys", () => {
     const r = decide({ health: "unconfigured (no API key)", fresh: {} });
+    expect(r.fetched.outputs).toEqual({ status: "404", meta_status: "404" });
+    expect(r.drop?.stdout).toContain("no baseline");
+    expect(r.drop?.outputs).toEqual({ dropped: "false" });
     expect(r.health.stdout).toContain("::warning::");
     expect(r.health.stdout).toContain("no API key");
     expect(r.health.outputs).toEqual({ degraded: "false" });
@@ -171,6 +242,42 @@ describe("deploy.yml: the health, drop, and decide steps, run as GitHub runs the
     expect(r.drop?.stdout).toContain('::warning::drive-drop: "meetings" listed 40 files on the live site and is not listed in this build');
     expect(r.decision?.code).toBe(1);
     expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "degraded-blocked" });
+  });
+
+  it.each<[string, [string, string?]]>([
+    ["a 503 that outlasts the retries", ["503", "Service Unavailable"]],
+    ["a 502", ["502", "<html>Bad gateway</html>"]],
+    ["no answer at all (curl prints 000 and exits non-zero)", ["000"]],
+    ["HTTP 200 with a page in place of the JSON", ["200", "<!doctype html><title>Sign in</title>"]],
+    ["HTTP 200 with JSON of another shape", ["200", '{"counts":{"meetings":40}}']],
+    ["HTTP 200 with an empty body", ["200", ""]],
+  ])("the live file counts could not be read (%s): a healthy, changed build still fails", (_name, meta) => {
+    const r = decide({ health: "ok", meta, fresh: FIVE, liveHash: OLD });
+    expect(r.fetched.outputs.meta_status).toBe(meta[0]);
+    expect(r.health.outputs).toEqual({ degraded: "false" });
+    expect(r.drop?.code).toBe(0);
+    expect(r.drop?.outputs).toEqual({ dropped: "unknown" });
+    expect(r.drop?.stdout).toContain("::warning::drive-drop: could not read the live site's file counts");
+    expect(r.decision?.code).toBe(1);
+    expect(r.decision?.stdout).toMatch(/::error::Could not read the live site's file counts/);
+    expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "degraded-blocked" });
+    // The same build goes out with the checkbox ticked, and only then.
+    const allowed = decide({ health: "ok", meta, fresh: FIVE, liveHash: OLD, allow: true });
+    expect(allowed.decision?.outputs).toEqual({ deploy: "true", reason: "degraded-allowed" });
+    expect(allowed.decision?.stdout).toContain("::warning::");
+  });
+
+  it("the live file counts could not be read and the build is identical: still red, so the fault is seen", () => {
+    const r = decide({ health: "ok", meta: ["503"], fresh: FIVE, liveHash: NEW });
+    expect(r.decision?.code).toBe(1);
+    expect(r.decision?.outputs).toEqual({ deploy: "false", reason: "degraded-blocked" });
+  });
+
+  it("a failed hash fetch alone changes nothing: the build counts as different, and deploys if healthy", () => {
+    const bin = fakeCurl({ hash: ["000"], meta: ["200", JSON.stringify({ driveFileCounts: FIVE })] });
+    const fetched = runStep("deployed", { PATH: `${bin}:${process.env.PATH ?? ""}`, BASE_URL: "https://live.example.org", GITHUB_RUN_ID: "7", GITHUB_RUN_ATTEMPT: "2" });
+    expect(fetched.code).toBe(0);
+    expect(fetched.outputs).toEqual({ status: "000", meta_status: "200" });
   });
 
   it.each([
@@ -212,10 +319,19 @@ describe("deploy.yml: the health, drop, and decide steps, run as GitHub runs the
     }
   });
 
-  it("a build without build-meta.json fails at the drop step", () => {
+  it("a build without build-meta.json fails at the drop step, whatever the live site answered", () => {
     writeFileSync(join(dir, "tmp/build.log"), "[site-data] health: ok\n");
     expect(runStep("health").code).toBe(0);
-    const drop = runStep("drop");
+    for (const status of ["200", "404", "503"]) {
+      const drop = runStep("drop", { LIVE_META_STATUS: status });
+      expect(drop.code, status).toBe(2);
+      expect(drop.outputs).toEqual({});
+    }
+  });
+
+  it("a missing fetch status fails at the drop step: an absent output is never read as 'no baseline'", () => {
+    writeFileSync(join(dir, "dist/build-meta.json"), JSON.stringify({ driveFileCounts: FIVE }));
+    const drop = runStep("drop", { LIVE_META_STATUS: "" });
     expect(drop.code).toBe(2);
     expect(drop.outputs).toEqual({});
   });

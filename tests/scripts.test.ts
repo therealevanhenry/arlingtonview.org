@@ -182,15 +182,15 @@ describe("build-health.sh", () => {
 
 describe("drive-drop.sh", () => {
   const meta = (counts: Record<string, unknown>) => JSON.stringify({ driveFileCounts: counts });
-  /** `undefined` means the file does not exist. */
-  const drop = (live: string | undefined, fresh: string | undefined) => {
+  /** `undefined` means the file does not exist. `status` is the HTTP status of the live fetch. */
+  const drop = (live: string | undefined, fresh: string | undefined, status = "200") => {
     const a = join(tmp, "live.json");
     const b = join(tmp, "new.json");
     rmSync(a, { force: true });
     rmSync(b, { force: true });
     if (live !== undefined) writeFileSync(a, live);
     if (fresh !== undefined) writeFileSync(b, fresh);
-    return run("drive-drop.sh", [a, b]);
+    return run("drive-drop.sh", [a, b, status]);
   };
   const FIVE = { bylaws: 6, meetings: 40, presentations: 9, letters: 5, neighborhoodPlan: 4 };
 
@@ -204,7 +204,7 @@ describe("drive-drop.sh", () => {
     ["a new root appearing", { bylaws: 6 }, { bylaws: 6, meetings: 40 }],
     ["a live site that listed nothing (built without the key)", {}, FIVE],
     ["neither build listed anything", {}, {}],
-  ])("exits 0: %s", (_name, live, fresh) => {
+  ])("exits 0 (HTTP 200, a readable baseline): %s", (_name, live, fresh) => {
     const r = drop(meta(live), meta(fresh));
     expect(r.code).toBe(0);
     expect(r.err).toBe("");
@@ -232,22 +232,44 @@ describe("drive-drop.sh", () => {
     expect(r.out).toContain('"bylaws" listed 6 files on the live site and is not listed in this build');
   });
 
+  // Three outcomes of the live fetch. Only a 404 means "there is nothing to compare with".
+  it("HTTP 404 is no baseline (nothing published yet, or a site from before this file existed): exits 0, whatever was saved", () => {
+    for (const body of [undefined, "", "<!doctype html><title>Page not found</title>", meta(FIVE)]) {
+      const r = drop(body, meta({ meetings: 1 }), "404");
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("no baseline");
+      expect(r.out).toContain("HTTP 404");
+    }
+  });
+
+  it.each(["000", "500", "502", "503", "504", "429", "403", "301", "410", "204"])(
+    "HTTP %s is a baseline that could not be read: exits 3, even with a valid file beside it",
+    (status) => {
+      for (const body of [undefined, "", "<html>Bad gateway</html>", meta(FIVE)]) {
+        const r = drop(body, meta(FIVE), status);
+        expect(r.code).toBe(3);
+        expect(r.out).toBe(`drive-drop: could not read the live site's file counts (HTTP ${status} for build-meta.json)\n`);
+      }
+    },
+  );
+
   it.each<[string, string | undefined]>([
-    ["the live file is absent (nothing deployed, or the fetch failed)", undefined],
-    ["the live file is empty", ""],
-    ["the live file is an error page", "<!doctype html><title>Page not found</title>"],
-    ["the live file is malformed JSON", '{"driveFileCounts":{"meetings":40'],
-    ["the live file has no driveFileCounts", "{}"],
-    ["driveFileCounts is not an object", '{"driveFileCounts":[40]}'],
-    ["a count is not a non-negative whole number", meta({ meetings: "40" })],
-    ["a count is negative", meta({ meetings: -1 })],
-    ["a count is fractional", meta({ meetings: 40.5 })],
-    ["the live file is JSON null", "null"],
-    ["a root name is not a plain key (it would be printed into the workflow log)", JSON.stringify({ driveFileCounts: { "x\n::error::injected": 9 } })],
-  ])("exits 0 with no baseline when %s", (_name, live) => {
+    ["absent", undefined],
+    ["empty", ""],
+    ["an HTML page", "<!doctype html><title>Welcome</title>"],
+    ["malformed JSON", '{"driveFileCounts":{"meetings":40'],
+    ["JSON without driveFileCounts", "{}"],
+    ["driveFileCounts that is not an object", '{"driveFileCounts":[40]}'],
+    ["a count that is not a non-negative whole number", meta({ meetings: "40" })],
+    ["a negative count", meta({ meetings: -1 })],
+    ["a fractional count", meta({ meetings: 40.5 })],
+    ["JSON null", "null"],
+    ["a root name that is not a plain key (it would be printed into the workflow log)", JSON.stringify({ driveFileCounts: { "x\n::error::injected": 9 } })],
+  ])("HTTP 200 with a body that is %s could not be read either: exits 3", (_name, live) => {
     const r = drop(live, meta({ meetings: 1 }));
-    expect(r.code).toBe(0);
-    expect(r.out).toContain("no baseline");
+    expect(r.code).toBe(3);
+    expect(r.out).toBe("drive-drop: could not read the live site's file counts (HTTP 200, but build-meta.json is not the expected JSON)\n");
+    expect(r.out).not.toContain("injected");
   });
 
   it.each<[string, string | undefined]>([
@@ -257,19 +279,25 @@ describe("drive-drop.sh", () => {
     ["the wrong shape", '{"counts":{}}'],
     ["holding a bad count", meta({ meetings: "many" })],
     ["holding a root name that is not a plain key", meta({ "two words": 3 })],
-  ])("exits 2 when the NEW file is %s, whatever the live file says", (_name, fresh) => {
-    for (const live of [meta(FIVE), undefined]) {
-      const r = drop(live, fresh);
+  ])("exits 2 when the NEW file is %s, whatever the live site answered", (_name, fresh) => {
+    for (const [live, status] of [[meta(FIVE), "200"], [undefined, "404"], [undefined, "503"]] as const) {
+      const r = drop(live, fresh, status);
       expect(r.code).toBe(2);
       expect(r.err).toContain("drive-drop:");
       expect(r.out).toBe("");
     }
   });
 
-  it("exits 2 on wrong usage", () => {
+  it("exits 2 on wrong usage, including a status that is not three digits", () => {
     expect(run("drive-drop.sh").code).toBe(2);
     expect(run("drive-drop.sh", [join(tmp, "one.json")]).code).toBe(2);
-    expect(run("drive-drop.sh", ["a", "b", "c"]).code).toBe(2);
+    expect(run("drive-drop.sh", ["a", "b"]).code).toBe(2);
+    expect(run("drive-drop.sh", ["a", "b", "200", "d"]).code).toBe(2);
+    for (const status of ["", "ok", "20", "2000", "200\n"]) {
+      const r = drop(meta(FIVE), meta(FIVE), status);
+      expect(r.code, JSON.stringify(status)).toBe(2);
+      expect(r.err).toContain("HTTP status");
+    }
   });
 });
 
@@ -326,8 +354,10 @@ describe("deploy-decision.sh", () => {
     expect(outputs()).toContain("deploy=true");
   });
 
-  // The whole truth table. "Bad" is a degraded build (DEGRADED) or a Drive listing drop (DRIVE_DROP):
-  // either one, with no exception for any HTTP status, is a failed run unless allow_degraded is true.
+  // The whole truth table. "Bad" is a degraded build (DEGRADED), a Drive listing drop (DRIVE_DROP=true),
+  // or file counts that could not be compared because the live site's could not be read
+  // (DRIVE_DROP=unknown): any of them, with no exception for any HTTP status, is a failed run unless
+  // allow_degraded is true.
   const SAME: [string, string] = ["200", `${NEW}\n`];
   const DIFFERENT: [string, string] = ["200", `${OTHER}\n`];
   const NOTHING_LIVE: [string, string] = ["404", "<html>Site not found</html>"];
@@ -336,6 +366,8 @@ describe("deploy-decision.sh", () => {
     ["degraded", { DEGRADED: "true" }],
     ["a Drive listing drop", { DRIVE_DROP: "true" }],
     ["degraded and a Drive listing drop", { DEGRADED: "true", DRIVE_DROP: "true" }],
+    ["live file counts that could not be read", { DRIVE_DROP: "unknown" }],
+    ["degraded, and live file counts that could not be read", { DEGRADED: "true", DRIVE_DROP: "unknown" }],
   ];
 
   describe.each(BAD)("%s", (_name, bad) => {
@@ -379,7 +411,7 @@ describe("deploy-decision.sh", () => {
     const reasons = new Set<string>();
     for (const [status, body] of [SAME, DIFFERENT, NOTHING_LIVE, UNREACHABLE] as Array<[string, string | undefined]>) {
       for (const DEGRADED of ["true", "false"]) {
-        for (const DRIVE_DROP of ["true", "false"]) {
+        for (const DRIVE_DROP of ["true", "false", "unknown"]) {
           for (const ALLOW_DEGRADED of ["true", "false"]) {
             decide(status, body, { DEGRADED, DRIVE_DROP, ALLOW_DEGRADED });
             reasons.add(/reason=(.*)/.exec(outputs())?.[1] ?? "none");
@@ -396,14 +428,19 @@ describe("deploy-decision.sh", () => {
     const both = decide(...DIFFERENT, { DEGRADED: "true", DRIVE_DROP: "true" }).out;
     expect(both).toMatch(/unreachable or misconfigured/);
     expect(both).toMatch(/far fewer files/);
+    const unknown = decide(...DIFFERENT, { DRIVE_DROP: "unknown" }).out;
+    expect(unknown).toMatch(/could not read the live site's file counts/i);
+    expect(unknown).not.toMatch(/far fewer files|unreachable or misconfigured/);
   });
 
-  it.each(["DEGRADED", "DRIVE_DROP"])("requires %s to be exactly true or false, and writes no output otherwise", (name) => {
-    for (const bad of ["", "TRUE", "1", "yes"]) {
+  it.each(["DEGRADED", "DRIVE_DROP"])("requires %s to be exactly one of its values, and writes no output otherwise", (name) => {
+    for (const bad of ["", "TRUE", "1", "yes", "Unknown", "maybe"]) {
       const r = decide("200", `${OTHER}\n`, { [name]: bad });
       expect(r.code).toBe(2);
       expect(r.err).toContain(`${name} must be exactly`);
     }
+    // "unknown" is a value of DRIVE_DROP only.
+    expect(decide("200", `${OTHER}\n`, { DEGRADED: "unknown" }).code).toBe(2);
     expect(outputs()).toBe("");
   });
 });

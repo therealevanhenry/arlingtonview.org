@@ -7,7 +7,8 @@
 #   DEPLOYED_FILE     path of the downloaded response body (may be empty or absent)
 #   DEGRADED          exactly "true" (scripts/build-health.sh: Google was asked and something failed) or "false"
 #   DRIVE_DROP        exactly "true" (scripts/drive-drop.sh: a Drive folder lists far fewer files than
-#                     the live site shows) or "false"
+#                     the live site shows), "false", or "unknown" (the live site's file counts could
+#                     not be read, so a drop cannot be ruled out)
 #   ALLOW_DEGRADED    "true" only for a workflow_dispatch run that ticked allow_degraded
 #   GITHUB_OUTPUT     where step outputs are appended (stdout when unset, for local runs)
 #
@@ -17,27 +18,33 @@
 #   healthy                        (ignored)        skip, green           deploy
 #   DEGRADED or DRIVE_DROP         false            red, no deploy        red, no deploy
 #   DEGRADED or DRIVE_DROP         true             skip, warning         deploy, warning
+# ("DRIVE_DROP" in the table is true or unknown; healthy is DEGRADED=false and DRIVE_DROP=false.)
 #
 # There is no other exception. In particular a 404 for build-hash.txt does NOT let a bad build
 # through as a "first deploy": during DNS cutover the configured domain answers 404 for that path
 # from the old site, which is exactly when publishing a broken build would hurt most.
 # Exit 1 with reason=degraded-blocked for a red row. Exit 2, with no output, when DEGRADED or
-# DRIVE_DROP is not exactly true or false (a missing value must never read as healthy).
+# DRIVE_DROP is not exactly one of its values (a missing value must never read as healthy).
 set -euo pipefail
 
 : "${NEW_HASH:?NEW_HASH is required}"
 : "${DEPLOYED_STATUS:?DEPLOYED_STATUS is required}"
 degraded=${DEGRADED:-}
 drop=${DRIVE_DROP:-}
-for pair in "DEGRADED=$degraded" "DRIVE_DROP=$drop"; do
-  case "${pair#*=}" in
-    true | false) ;;
-    *)
-      echo "deploy-decision: ${pair%%=*} must be exactly \"true\" or \"false\" (got \"${pair#*=}\")" >&2
-      exit 2
-      ;;
-  esac
-done
+case "$degraded" in
+  true | false) ;;
+  *)
+    echo "deploy-decision: DEGRADED must be exactly \"true\" or \"false\" (got \"${degraded}\")" >&2
+    exit 2
+    ;;
+esac
+case "$drop" in
+  true | false | unknown) ;;
+  *)
+    echo "deploy-decision: DRIVE_DROP must be exactly \"true\", \"false\", or \"unknown\" (got \"${drop}\")" >&2
+    exit 2
+    ;;
+esac
 allow=${ALLOW_DEGRADED:-false}
 out=${GITHUB_OUTPUT:-/dev/stdout}
 
@@ -60,6 +67,9 @@ fi
 if [ "$drop" = "true" ]; then
   bad=true
   problem="${problem:+$problem }A Drive folder lists far fewer files than the live site shows (was sharing removed from a folder or a subfolder?)."
+elif [ "$drop" = "unknown" ]; then
+  bad=true
+  problem="${problem:+$problem }Could not read the live site's file counts (build-meta.json), so this build's Drive folders could not be compared with what is published."
 fi
 
 same=false
