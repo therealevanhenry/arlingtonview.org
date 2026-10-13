@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conferencingHits, emailAddresses, privateNameReason, withoutEmailAddresses } from "../src/lib/privacy";
+import { conferencingHits, emailAddresses, privateFileReason, privateNameReason, withoutEmailAddresses } from "../src/lib/privacy";
 
 describe("privateNameReason (Drive file names that are never listed)", () => {
   it.each([
@@ -69,5 +69,15 @@ describe("withoutEmailAddresses", () => {
       expect(emailAddresses(out), text).toEqual([]);
       expect(out, text).not.toMatch(/gmail\.com/i);
     }
+  });
+});
+
+describe("privateFileReason (a file's own name, then the folders above it)", () => {
+  it("gives the file's own name first, then the first folder with the problem, or nothing", () => {
+    expect(privateFileReason({ name: "Minutes.pdf", path: ["2026-2027", "26 10 October"] })).toBeUndefined();
+    expect(privateFileReason({ name: "Minutes for a.resident@example.org", path: ["zoom.us/j/1"] })).toBe("name contains an email address");
+    expect(privateFileReason({ name: "Minutes.pdf", path: ["2026-2027", "Join zoom.us/j/1", "from a.resident@example.org"] })).toBe("a folder name contains a conferencing link");
+    expect(privateFileReason({ name: "Minutes.pdf", path: ["gmail.com export"] })).toBe("a folder name contains an email address");
+    expect(privateFileReason({ name: "logo@2x.png", path: ["Assets @ 2x"] })).toBeUndefined();
   });
 });

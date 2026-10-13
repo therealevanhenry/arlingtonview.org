@@ -448,3 +448,61 @@ describe("an email address in a location is removed and noted, never printed or 
     expect(clean.ok && clean.notes).toEqual([]);
   });
 });
+
+describe("the title is cleaned like the location (it goes into the Add to Google Calendar link)", () => {
+  const titleNow = new Date("2026-10-06T18:00:00Z");
+  const titled = (uid: string, start: string, end: string, summary: string, ...extra: string[]) =>
+    ["BEGIN:VEVENT", `UID:${uid}`, "DTSTAMP:20250901T000000Z", `DTSTART:${start}`, `DTEND:${end}`, `SUMMARY:${summary.replace(/,/g, "\\,")}`, ...extra, "END:VEVENT"].join("\r\n");
+  const one = (summary: string) => parseCalendar(wrap(titled("t", "20261020T230000Z", "20261021T003000Z", summary)), titleNow);
+
+  it.each<[string, string, string]>([
+    ["a title with an address", "AVCA Monthly Meeting, RSVP to jane.roe@yahoo.example.org", "AVCA Monthly Meeting, RSVP to"],
+    ["a title with an address in parentheses", "AVCA Monthly Meeting (a.resident@example.org)", "AVCA Monthly Meeting"],
+    ["a title with a gmail address", "Budget session x.y@gmail.com", "Budget session"],
+    ["a title with a join link", "AVCA Monthly Meeting https://zoom.us/j/1234567890?pwd=abc", "AVCA Monthly Meeting"],
+    ["a title with a join link written without a scheme", "AVCA Monthly Meeting: meet.google.com/abc-defg-hij", "AVCA Monthly Meeting"],
+    ["a title with a link of another kind", "Agenda at https://docs.google.com/document/d/UNVETTED/edit - AVCA", "Agenda at - AVCA"],
+    ["a title that is only a link", "https://meet.google.com/abc-defg-hij", "Meeting"],
+    ["a title that is only an address", "a.resident@example.org", "Meeting"],
+  ])("%s", (_name, summary, expected) => {
+    const { meetings, notes } = one(summary);
+    expect(meetings[0].title).toBe(expected);
+    expect(notes).toEqual(["the title of the meeting on 2026-10-20 was cleaned"]);
+    const everything = `${JSON.stringify(meetings)} ${notes.join(" ")} ${addToGoogleCalendarUrl(meetings[0])} ${decodeURIComponent(addToGoogleCalendarUrl(meetings[0]))}`;
+    expect(everything).not.toMatch(/@|%40|jane|resident|example\.org|gmail|zoom\.us|meet\.google|UNVETTED|https?:\/\/(?!calendar\.google\.com\/calendar\/render)/);
+    // A join link in the title says nothing about where the meeting is held.
+    expect(meetings[0].isVirtual).toBe(true);
+    expect(meetings[0].location).toBeUndefined();
+  });
+
+  it.each(["AVCA Monthly Meeting", "AVCA Monthly Meeting - October", "Budget & Bylaws: a special session!", "Meet the candidates (Zoom or in person)", "Board @ 7"])(
+    "leaves an ordinary title exactly as written, with no note: %s",
+    (summary) => {
+      const { meetings, notes } = one(summary);
+      expect(meetings[0].title).toBe(summary);
+      expect(notes).toEqual([]);
+    },
+  );
+
+  it("still calls an event with no title Meeting, with no note", () => {
+    const body = wrap(["BEGIN:VEVENT", "UID:t", "DTSTAMP:20250901T000000Z", "DTSTART:20261020T230000Z", "DTEND:20261021T003000Z", "END:VEVENT"].join("\r\n"));
+    const { meetings, notes } = parseCalendar(body, titleNow);
+    expect(meetings[0].title).toBe("Meeting");
+    expect(notes).toEqual([]);
+  });
+
+  it("notes each affected event once (a series is one event), by its next meeting, beside any location note", () => {
+    const body = wrap(
+      titled("series", "20260915T230000Z", "20260916T003000Z", "AVCA Meeting zoom.us/j/1", "RRULE:FREQ=MONTHLY;COUNT=6", "LOCATION:Room 2 b.neighbor@example.org"),
+      titled("past", "20260901T230000Z", "20260902T003000Z", "Old a.resident@example.org"),
+      titled("clean", "20261117T000000Z", "20261117T013000Z", "AVCA Monthly Meeting"),
+    );
+    const { meetings, notes } = parseCalendar(body, titleNow);
+    expect(notes).toEqual([
+      "an email address was removed from the location of the meeting on 2026-10-15",
+      "the title of the meeting on 2026-10-15 was cleaned",
+    ]);
+    expect(meetings.filter((m) => m.uid === "series").every((m) => m.title === "AVCA Meeting")).toBe(true);
+    expect(meetings.find((m) => m.uid === "past")?.title).toBe("Old");
+  });
+});

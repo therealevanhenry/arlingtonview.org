@@ -559,6 +559,42 @@ describe("names hidden by rule (an email address or a conferencing link in the n
   });
 });
 
+describe("files under a folder whose name is hidden by rule", () => {
+  // A folder name is printed too: the first level under each root is a sub-heading on the Documents page.
+  const BAD_YEAR = ["2026-2027 (ask a.resident@example.org)", "26 10 October"];
+  const BAD_MONTH = ["2026-2027", "26 10 October zoom.us/j/123"];
+
+  it("classify marks them hidden, whichever level of the path has the problem", () => {
+    expect(classify(file("AVCA Proposed Agenda 10.20.2026", BAD_YEAR)).hidden).toBe(true);
+    expect(classify(file("AVCA Proposed Agenda 10.20.2026", BAD_MONTH)).hidden).toBe(true);
+    expect(classify(file("AVCA Proposed Agenda 10.20.2026", OCT)).hidden).toBe(false);
+  });
+
+  it("visibleFiles, the groupings (so no such heading exists), and recentFiles leave them out", () => {
+    const keep = file("AVCA Proposed Agenda 10.20.2026", OCT);
+    const all = [file("AVCA 2026 Sep mtg mins", BAD_YEAR), keep, file("Deck 2026-10-20", BAD_MONTH), file("Notes", ["Join meet.google.com/abc-defg-hij"])];
+    expect(visibleFiles(all)).toEqual([keep]);
+    expect(groupByPath(all)).toEqual([{ label: "2026-2027", files: [keep] }]);
+    expect(groupByYear(all).flatMap((g) => g.files)).toEqual([keep]);
+    expect(recentFiles([ok(all)], 10)).toEqual([keep]);
+  });
+
+  it("buildArchive never uses one, and never makes a row from one", () => {
+    const agenda = file("AVCA Proposed Agenda 10.20.2026", BAD_YEAR);
+    const lonely = file("AVCA Proposed Agenda 01.15.2020", ["2019-2020 x.y@gmail.com"]);
+    const rows = buildArchive([meeting("2026-10-20")], { meetings: ok([agenda, lonely]), presentations: ok([file("Deck 2026-10-20", BAD_MONTH)]) });
+    expect(dates(rows)).toEqual(["2026-10-20"]);
+    expect(rows[0].agenda).toBeUndefined();
+    expect(rows[0].materials).toEqual([]);
+  });
+
+  it("currentBylaws never falls back to a PDF under such a folder (only top-level files are candidates anyway)", () => {
+    const hidden = file("AVCA By-Laws (June 30th, 2031).pdf", ["Old a.resident@example.org"], { mimeType: "application/pdf" });
+    const fine = file("AVCA By-Laws (June 24th, 2026).pdf", [], { mimeType: "application/pdf" });
+    expect(currentBylaws("STALE", ok([hidden, fine]))?.id).toBe(fine.id);
+  });
+});
+
 describe("currentBylaws", () => {
   const PDF = "application/pdf";
   const url = (id: string) => `https://drive.google.com/file/d/${id}/view`;

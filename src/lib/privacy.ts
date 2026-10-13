@@ -47,11 +47,26 @@ export function withoutEmailAddresses(text: string): { text: string; removed: nu
 }
 
 /**
- * Why a Drive file with this name is not listed anywhere, or undefined when the name is fine.
+ * Why a Drive name (of a file or of a folder) must not be printed, or undefined when the name is fine.
  * Everything the build-output assertions reject in page text is covered, so a name cannot fail them.
  */
 export function privateNameReason(name: string): string | undefined {
   if (emailAddresses(name).length > 0 || mentionsGmail(name)) return "name contains an email address";
   if (conferencingHits(name).length > 0) return "name contains a conferencing link";
+  return undefined;
+}
+
+/**
+ * Why a Drive file is not listed anywhere, or undefined when it may be: its own name, or the name of
+ * any folder above it (`path`), holds an email address or a conferencing link. Folder names count
+ * because they are printed too (as sub-headings on the Documents page).
+ */
+export function privateFileReason(file: { name: string; path: string[] }): string | undefined {
+  const own = privateNameReason(file.name);
+  if (own !== undefined) return own;
+  for (const folder of file.path) {
+    const reason = privateNameReason(folder);
+    if (reason !== undefined) return `a folder ${reason}`;
+  }
   return undefined;
 }

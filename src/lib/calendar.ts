@@ -7,6 +7,7 @@ export type Meeting = {
   uid: string;
   start: Date;
   end: Date;
+  /** The event's summary with every web link and email address stripped out; `Meeting` when no text is left. It is never displayed, but it goes into the Add to Google Calendar link. */
   title: string;
   /** The event's location with every web link and email address stripped out; absent when no text is left. */
   location?: string;
@@ -43,23 +44,31 @@ function text(value: unknown): string {
 const withoutLink = (token: string): string =>
   `${/^[(\[<]+/.exec(token)?.[0] ?? ""} ${/[)\]>.,;:!?]+$/.exec(token)?.[0] ?? ""}`;
 
-type Location = {
+type Cleaned = {
   /** What may be printed; undefined when nothing is left. */
   text?: string;
-  /** A conferencing join link was in the location (and has been stripped). */
+  /** A conferencing join link was in the text (and has been stripped). */
   hadJoinLink: boolean;
-  /** An email address was in the location (and has been stripped). */
+  /** An email address was in the text (and has been stripped). */
   hadEmail: boolean;
+  /** Anything at all was stripped: a link of any kind, or an address. */
+  stripped: boolean;
 };
 
 /**
- * The location as it may be printed: every web link is stripped out (a join link must never be
- * published, and a map link is noise in a line of text), and so is every email address (the site
- * prints no address but the contact address); the punctuation left behind is tidied, and whatever
- * text survives is kept.
+ * Free text from a calendar event as it may be published: every web link is stripped out (a join link
+ * must never be published, and a map link is noise in a line of text), and so is every email address
+ * (the site prints no address but the contact address); the punctuation left behind is tidied, and
+ * whatever text survives is kept. Used for the location, which is printed, and for the title, which
+ * goes into a link.
  */
-function readLocation(raw: string): Location {
-  const withoutLinks = raw.replace(URL_TOKEN, withoutLink).replace(CONFERENCING_TOKEN, withoutLink);
+function clean(raw: string): Cleaned {
+  let links = 0;
+  const strip = (token: string): string => {
+    links++;
+    return withoutLink(token);
+  };
+  const withoutLinks = raw.replace(URL_TOKEN, strip).replace(CONFERENCING_TOKEN, strip);
   const { text: withoutAddresses, removed } = withoutEmailAddresses(withoutLinks);
   const tidy = withoutAddresses
     .replace(/\s+/g, " ")
@@ -70,11 +79,16 @@ function readLocation(raw: string): Location {
     .replace(/([,;:])(?:\s*[,;:])+/g, "$1")
     .replace(/\s+/g, " ")
     .replace(/^[\s,;:|/–—-]+|[\s,;:|/–—-]+$/g, "");
-  return { ...(tidy === "" ? {} : { text: tidy }), hadJoinLink: conferencingHits(raw).length > 0, hadEmail: removed > 0 };
+  return {
+    ...(tidy === "" ? {} : { text: tidy }),
+    hadJoinLink: conferencingHits(raw).length > 0,
+    hadEmail: removed > 0,
+    stripped: links > 0 || removed > 0,
+  };
 }
 
-/** A meeting, plus what `parseCalendar` needs to write its notes. `rawLocation` never leaves this module. */
-type Parsed = { meeting: Meeting; rawLocation: string; hadEmail: boolean };
+/** A meeting, plus what `parseCalendar` needs to write its notes. The raw texts never leave this module. */
+type Parsed = { meeting: Meeting; rawLocation: string; locationHadEmail: boolean; rawTitle: string; titleCleaned: boolean };
 
 /**
  * Only the summary, the location, the times, and the status are read. The description is never read:
@@ -83,16 +97,19 @@ type Parsed = { meeting: Meeting; rawLocation: string; hadEmail: boolean };
 function toMeeting(event: VEvent, start: Date, end: Date): Parsed | undefined {
   if (text(event.status).toUpperCase() === "CANCELLED") return undefined;
   const rawLocation = text(event.location);
-  const location = readLocation(rawLocation);
+  const location = clean(rawLocation);
+  const rawTitle = text(event.summary);
+  const title = clean(rawTitle);
   const meeting: Meeting = {
     uid: event.uid,
     start: new Date(start.getTime()),
     end: new Date(end.getTime() > start.getTime() ? end.getTime() : start.getTime() + DEFAULT_DURATION_MS),
-    title: text(event.summary).trim() || "Meeting",
+    // A title with nothing to strip is kept exactly as written; the tidying is only for what stripping leaves.
+    title: (title.stripped ? title.text : rawTitle.trim()) || "Meeting",
     isVirtual: location.text === undefined || VIRTUAL_WORDS.test(location.text) || location.hadJoinLink,
   };
   if (location.text !== undefined) meeting.location = location.text;
-  return { meeting, rawLocation, hadEmail: location.hadEmail };
+  return { meeting, rawLocation, locationHadEmail: location.hadEmail, rawTitle, titleCleaned: title.stripped };
 }
 
 /**
@@ -117,9 +134,10 @@ const isAllDay = (event: VEvent): boolean =>
  * events and instances are dropped, as are all-day events (not meetings). Standalone events get the
  * same window as recurring ones, judged by their start.
  *
- * `notes` are for the build log: one per event from whose location an email address was removed,
- * naming the date of that event's next meeting (events whose meetings have all ended are not noted:
- * their locations are not printed). A note never holds the address or any text from the event.
+ * `notes` are for the build log: one per event from whose location an email address was removed, and
+ * one per event whose title had a link or an address stripped, each naming the date of that event's
+ * next meeting (events whose meetings have all ended are not noted: nothing of theirs is published).
+ * A note never holds the address, the link, or any text from the event.
  */
 export function parseCalendar(body: string, now: Date): { meetings: Meeting[]; notes: string[] } {
   const from = new Date(now.getTime() - 2 * 365 * DAY_MS);
@@ -142,14 +160,19 @@ export function parseCalendar(body: string, now: Date): { meetings: Meeting[]; n
     }
   }
   parsed.sort((a, b) => a.meeting.start.getTime() - b.meeting.start.getTime());
-  // One note per event: a series and its meetings share a uid and a location; an edited instance differs.
+  // One note per event: a series and its meetings share a uid and their texts; an edited instance differs.
   const noted = new Set<string>();
   const notes: string[] = [];
-  for (const { meeting, rawLocation, hadEmail } of parsed) {
-    const event = `${meeting.uid}\u0000${rawLocation}`;
-    if (!hadEmail || meeting.end <= now || noted.has(event)) continue;
+  const noteOnce = (event: string, note: string): void => {
+    if (noted.has(event)) return;
     noted.add(event);
-    notes.push(`an email address was removed from the location of the meeting on ${localDate(meeting.start)}`);
+    notes.push(note);
+  };
+  for (const { meeting, rawLocation, locationHadEmail, rawTitle, titleCleaned } of parsed) {
+    if (meeting.end <= now) continue;
+    const date = localDate(meeting.start);
+    if (locationHadEmail) noteOnce(`location\u0000${meeting.uid}\u0000${rawLocation}`, `an email address was removed from the location of the meeting on ${date}`);
+    if (titleCleaned) noteOnce(`title\u0000${meeting.uid}\u0000${rawTitle}`, `the title of the meeting on ${date} was cleaned`);
   }
   return { meetings: parsed.map((p) => p.meeting), notes };
 }

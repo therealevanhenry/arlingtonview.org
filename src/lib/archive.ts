@@ -1,6 +1,6 @@
 import type { Meeting } from "./calendar";
 import type { DriveFile, FolderResult } from "./drive";
-import { privateNameReason } from "./privacy";
+import { privateFileReason } from "./privacy";
 import { localDate } from "./time";
 
 export type FileKind = "agenda" | "minutes" | "material";
@@ -43,15 +43,16 @@ const MINUTES = /\b(?:minutes|mins)\b/i;
 const MONTH_FOLDER = /^(\d{2}) (\d{2})(?:\s|$)/;
 
 /**
- * The one definition of a name that is never shown: it starts with `(OLD)` (the owner retired the
- * file), or it holds an email address or a conferencing link (see privacy.ts; data.ts logs those).
+ * The one definition of a file that is never shown: its name starts with `(OLD)` (the owner retired
+ * it), or its name, or the name of a folder above it, holds an email address or a conferencing link
+ * (see privacy.ts; data.ts logs those).
  */
-const isHiddenName = (name: string): boolean => HIDDEN.test(name) || privateNameReason(name) !== undefined;
+const isHidden = (file: DriveFile): boolean => HIDDEN.test(file.name) || privateFileReason(file) !== undefined;
 
 export function classify(file: DriveFile): { kind: FileKind; draft: boolean; hidden: boolean } {
   const { name } = file;
   const kind: FileKind = AGENDA.test(name) ? "agenda" : MINUTES.test(name) ? "minutes" : "material";
-  return { kind, draft: DRAFT.test(name), hidden: isHiddenName(name) };
+  return { kind, draft: DRAFT.test(name), hidden: isHidden(file) };
 }
 
 /** `YYYY-MM` of the nearest ancestor folder named like `26 10 October`. */
@@ -231,9 +232,9 @@ export function agendaFor(meeting: Meeting, rows: ArchiveRow[]): string | undefi
   return rows.find((r) => r.date === date)?.agenda?.url;
 }
 
-/** The one definition of "visible": not a folder entry and not a hidden name (`isHiddenName`). */
+/** The one definition of "visible": not a folder entry and not hidden (`isHidden`). */
 export function visibleFiles(files: DriveFile[]): DriveFile[] {
-  return files.filter((f) => !f.isFolder && !isHiddenName(f.name));
+  return files.filter((f) => !f.isFolder && !isHidden(f));
 }
 
 export function recentFiles(folders: FolderResult[], n: number): DriveFile[] {
