@@ -34,12 +34,13 @@ What the site does with calendar events:
 - The place shown is the event's location, as you wrote it. Web links in the location are removed (a join link must never be published, and the text beside the link is kept), so "Carver Community Center https://maps.example/x" is shown as "Carver Community Center".
 - An event with no location, or whose location is only a link, or only one of the words Virtual, Online, Zoom, Google Meet, or Meet (with or without "meeting" after it), is shown as "Virtual meeting".
 - The note about how members get the virtual meeting link is added on the home page whenever the meeting counts as virtual: when no location text is left, or the location contains the whole word virtual, zoom, meet, or online. So a hybrid meeting written as "Carver Community Center (also on Zoom)" shows the venue and the note. The same goes for "Meet in the lobby": it is shown as written, with the note beside it. For a meeting that is in person only, write the location without those four words, e.g. "Arlington Hall, 2nd floor".
+- Do not type an email address into an event's location. The location is printed on the site, the site may print no address but the contact address, and the rebuild fails ("Assert on the built site", see section 4) until the address is removed.
 - Times are shown in Eastern time.
 - Events from two years back to one year ahead are read.
 
 ### What the site never shows
 
-The site never shows an event's title, its description, or any video-meeting link. It does not read the description at all: nothing typed or pasted there (links, notes, recordings) can reach the site. The "Agenda" link beside a meeting comes from one place only, the agenda file in the Minutes & Agendas folder in Drive (see "Publish an agenda or minutes").
+The site never shows an event's description or any video-meeting link. It does not read the description at all: nothing typed or pasted there (links, notes, recordings) can reach the site. The "Agenda" link beside a meeting comes from one place only, the agenda file in the Minutes & Agendas folder in Drive (see "Publish an agenda or minutes").
 
 > [!CAUTION]
 > The calendar itself is public, and the site cannot hide what is in it. Google adds the Meet link to the event description when video conferencing is attached, and attachments such as recordings are listed on the event. Anyone who subscribes to the calendar, or opens its calendar file, can see all of that. If the video link must stay private, do not attach conferencing to events on the public calendar, and send the link to members another way, e.g. by email.
@@ -239,8 +240,8 @@ How a run decides (for whoever is reading a failed run):
 | A Drive folder came back empty | Red. Not deployed. |
 | A Drive folder lists fewer than half the files the live site shows (when that was 4 or more) | Red. Not deployed. The step "Compare Drive file counts with the live site" names the folder and both counts. |
 | The calendar could not be read | Red. Not deployed. |
-| The build log has no health line, or more than one | Red. The step "Check build health" fails: a build that does not say it is healthy is not treated as healthy. |
 | Any of the red cases above, started by hand with "Deploy even if the build is degraded" ticked | Green with a warning. Deploys if different, skips if identical. |
+| The build log has no health line, or more than one | Red, whatever the checkbox says. The step "Check build health" fails: a build that does not say it is healthy is not treated as healthy. |
 | The run is for a commit that is no longer the newest on `main` (e.g. an old run re-run by hand) | Green with a notice. Nothing is built or deployed. |
 | A check on the finished pages fails ("Assert on the built site") | Red. Not deployed, whatever the checkbox says. |
 | The tests or the build itself fail | Red. Not deployed, whatever the checkbox says. |
