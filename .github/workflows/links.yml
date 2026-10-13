@@ -37,10 +37,16 @@ jobs:
         # The action is pinned to the commit of its v2.9.0 release, and the lychee binary it downloads to
         # v0.24.2 (the action's `lycheeVersion` input; also that release's default). The exit codes that
         # scripts/lychee-outcome.sh classifies are lychee v0.24.2's. Move the three together.
+        #
+        # --root-dir (an absolute path, which lychee requires) is how lychee resolves the site's
+        # root-relative links (/meetings/, /favicon.ico, /_astro/...) in local files; without it each
+        # one is an error. They then become file:// URLs, which lychee.toml's `scheme = ["https"]`
+        # leaves unchecked. Internal links are verified by tests/build.test.ts, not here. It is a CLI
+        # flag, not a config key, so the absolute path can come from github.workspace.
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           lycheeVersion: v0.24.2
-          args: --config lychee.toml './dist/**/*.html'
+          args: --config lychee.toml --root-dir "${{ github.workspace }}/dist" './dist/**/*.html'
           output: lychee/out.md
           fail: false
 

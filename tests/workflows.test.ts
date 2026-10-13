@@ -66,6 +66,13 @@ describe("workflow files", () => {
     const lychee = steps.find((s) => s.uses?.startsWith("lycheeverse/lychee-action@"));
     expect(lychee?.with?.lycheeVersion).toMatch(/^v\d+\.\d+\.\d+$/);
   });
+
+  it("gives lychee the built site as an absolute root dir so root-relative links resolve", () => {
+    const steps = Object.values(one("links.yml").yaml.jobs).flatMap((j) => j.steps ?? []);
+    const lychee = steps.find((s) => s.uses?.startsWith("lycheeverse/lychee-action@"));
+    // lychee requires --root-dir to be absolute; a relative path or a config key would not be.
+    expect(String(lychee?.with?.args)).toMatch(/(?:^|\s)--root-dir[ =]"?\$\{\{ github\.workspace \}\}\/dist"?(?:\s|$)/);
+  });
 });
 
 /**

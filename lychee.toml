@@ -12,7 +12,10 @@
 # absolute canonical URL, and before DNS cutover that origin is still the old site, where new paths 404.
 # Internal links are verified by tests/build.test.ts.
 #
-# Internal links are covered by tests/build.test.ts, so only https URLs are checked here.
+# Internal links are covered by tests/build.test.ts, so only https URLs are checked here. The pages use
+# root-relative links (/meetings/, /_astro/...), which lychee can only resolve in local files when
+# given a root dir: the workflow passes `--root-dir "$GITHUB_WORKSPACE/dist"` (it must be absolute, so
+# it is a CLI flag rather than a key here). Resolved, they are file:// URLs, which `scheme` leaves unchecked.
 
 scheme = ["https"]
 no_progress = true
