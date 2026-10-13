@@ -108,12 +108,22 @@ export function buildMetaJson(folders: Record<DriveRoot, FolderResult>): string 
 }
 
 /**
- * A Drive file name as it may be printed in the build log: on one line, and with square brackets
- * shown as parentheses, so no file name can pass for one of the log's own `[...]` lines (the health
- * line above all).
+ * A name from Drive as it may be printed in the build log: on one line, and with square brackets
+ * shown as parentheses, so no name can pass for one of the log's own `[...]` lines (the health line
+ * above all).
  */
 const logName = (name: string): string =>
   name.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\[/g, "(").replace(/\]/g, ")").replace(/\s+/g, " ").trim();
+
+/**
+ * Where a hidden file is, for the build log: `<root key>/<folder>/<folder>`. The log of a public
+ * repository is public and permanent, while a file can be renamed, so the line that reports a file
+ * hidden for its name never repeats the name, or any folder name that has the same problem. The owner
+ * finds the file by its ID (https://drive.google.com/file/d/<id>/view) or by looking in the folder.
+ */
+function logPlace(root: DriveRoot, path: string[]): string {
+  return [root, ...path.map((folder) => (privateNameReason(folder) === undefined ? logName(folder) : "(folder name withheld)"))].join("/");
+}
 
 /** A loader that fetches once and hands every caller the same promise. Injectable for tests. */
 export function createSiteDataLoader(deps: SiteDataDeps = defaultDeps): () => Promise<SiteData> {
@@ -133,14 +143,18 @@ export function createSiteDataLoader(deps: SiteDataDeps = defaultDeps): () => Pr
       if (!calendar.ok && settings.calendarId.trim() !== "" && !offline) {
         console.warn(`[calendar] not loaded: ${calendar.reason}; the meetings list will be empty`);
       }
-      // Not failures: a file left out because its name holds an email address or a conferencing link
-      // (`visibleFiles` hides it everywhere), and a bylaws file ID that has gone stale.
+      // Not failures: an email address removed from a meeting's location, a file left out because its
+      // name holds an email address or a conferencing link (`visibleFiles` hides it everywhere), and a
+      // bylaws file ID that has gone stale. None of these lines repeats what was removed or hidden.
+      for (const note of calendar.ok ? (calendar.notes ?? []) : []) console.warn(`[calendar] note: ${logName(note)}`);
       for (const root of DRIVE_ROOTS) {
         const folder = folders[root];
         if (!folder.ok) continue;
         for (const file of folder.files) {
           const reason = file.isFolder ? undefined : privateNameReason(file.name);
-          if (reason !== undefined) console.warn(`[drive] hidden: "${logName(file.name)}" (${reason})`);
+          if (reason === undefined) continue;
+          const id = file.id.replace(/[^A-Za-z0-9_-]/g, "");
+          console.warn(`[drive] hidden: file ${id} in ${logPlace(root, file.path)} (${reason})`);
         }
       }
       const bylaws = currentBylaws(settings.drive.bylawsCurrentFileId, folders.bylaws);

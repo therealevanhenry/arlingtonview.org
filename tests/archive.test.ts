@@ -607,6 +607,19 @@ describe("currentBylaws", () => {
     expect(result?.note).toBe("drive.bylawsCurrentFileId is not in the Bylaws folder, and the folder has no PDF at its top level; the link is unchanged");
   });
 
+  it("never falls back to a file hidden for its name, so the note in the build log cannot repeat such a name", () => {
+    const fine = pdf("AVCA By-Laws (June 24th, 2026).pdf");
+    const withAddress = pdf("AVCA By-Laws (June 30th, 2029) ask a.resident@example.org.pdf");
+    const withLink = pdf("AVCA By-Laws (June 30th, 2030) zoom.us/j/1.pdf");
+    const result = currentBylaws("STALE", ok([withAddress, fine, withLink]));
+    expect(result?.id).toBe(fine.id);
+    expect(result?.note).not.toMatch(/@|zoom\.us/);
+    // With nothing else to fall back to, the configured link is kept, and the note names no file.
+    expect(currentBylaws("STALE", ok([withAddress, withLink]))?.note).toBe(
+      "drive.bylawsCurrentFileId is not in the Bylaws folder, and the folder has no PDF at its top level; the link is unchanged",
+    );
+  });
+
   it("is undefined for a blank ID: no link, whatever the folder holds", () => {
     expect(currentBylaws("", ok([pdf("Bylaws.pdf")]))).toBeUndefined();
     expect(currentBylaws("   ", failed)).toBeUndefined();

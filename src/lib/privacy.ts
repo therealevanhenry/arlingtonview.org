@@ -32,6 +32,21 @@ export function emailAddresses(text: string): string[] {
 export const mentionsGmail = (text: string): boolean => /gmail\.com/i.test(text);
 
 /**
+ * `text` with every email address taken out (with a `mailto:` in front of it, if any), and the bare
+ * text `gmail.com` as well, so that nothing the build's address check rejects is left. `removed` is how
+ * many pieces were taken out. The surrounding punctuation is left for the caller to tidy.
+ */
+export function withoutEmailAddresses(text: string): { text: string; removed: number } {
+  let removed = 0;
+  const drop = (): string => {
+    removed++;
+    return "";
+  };
+  const withoutAddresses = text.replace(new RegExp(`(?:mailto:)?${EMAIL.source}`, "gi"), (hit) => (DENSITY_SUFFIX.test(hit) ? hit : drop()));
+  return { text: withoutAddresses.replace(/[A-Za-z0-9.-]*gmail\.com/gi, drop), removed };
+}
+
+/**
  * Why a Drive file with this name is not listed anywhere, or undefined when the name is fine.
  * Everything the build-output assertions reject in page text is covered, so a name cannot fail them.
  */

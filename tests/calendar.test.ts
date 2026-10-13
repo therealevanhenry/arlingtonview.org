@@ -4,6 +4,7 @@ import {
   addToGoogleCalendarUrl,
   loadCalendar,
   nextMeeting,
+  parseCalendar,
   parseIcs,
   placeLabel,
   subscribeLinks,
@@ -71,6 +72,8 @@ describe("parseIcs (synthetic fixture)", () => {
     const withUrl = ics.replace("LOCATION:Arlington Hall", "LOCATION:Room 2\\, https://zoom.us/j/123");
     const m = parseIcs(withUrl, now).find((x) => localDate(x.start) === "2026-10-28");
     expect(m?.location).toBe("Room 2");
+    // The link that was stripped was a join link, so people can attend remotely: the meeting is virtual too.
+    expect(m?.isVirtual).toBe(true);
     expect(JSON.stringify(parseIcs(withUrl, now))).not.toContain("zoom.us");
   });
 
@@ -366,17 +369,30 @@ describe("location, isVirtual, and placeLabel", () => {
       { location: "Carver Community Center (also on Zoom)", isVirtual: true, label: "Carver Community Center (also on Zoom)" },
     ],
     ["a venue described with the word meet", "Meet at Carver", { location: "Meet at Carver", isVirtual: true, label: "Meet at Carver" }],
-    ["an address with a map link", "1415 S Queen St https://maps.example/x", { location: "1415 S Queen St", isVirtual: false, label: "1415 S Queen St" }],
+    ["a room with a join link: the room is the place, and the meeting is virtual as well", "Room 2, https://zoom.us/j/123", { location: "Room 2", isVirtual: true, label: "Room 2" }],
+    ["a room with a join link written without a scheme", "Room 2 (meet.google.com/abc-defg-hij)", { location: "Room 2", isVirtual: true, label: "Room 2" }],
+    ["a room with a dial-in link", "Room 2; tel.meet/abc-defg-hij?pin=123", { location: "Room 2", isVirtual: true, label: "Room 2" }],
+    ["an address with a map link: a link that is not a join link does not make a meeting virtual", "1415 S Queen St https://maps.example/x", { location: "1415 S Queen St", isVirtual: false, label: "1415 S Queen St" }],
     ["an address with a map link in parentheses", "1415 S Queen St (https://maps.example/x)", { location: "1415 S Queen St", isVirtual: false, label: "1415 S Queen St" }],
     ["a www link with no scheme", "Carver Community Center, www.example.org/carver", { location: "Carver Community Center", isVirtual: false, label: "Carver Community Center" }],
-    ["a venue between two links", "https://maps.example/x Carver Community Center; https://zoom.us/j/1", { location: "Carver Community Center", isVirtual: false, label: "Carver Community Center" }],
+    ["a venue between a map link and a join link", "https://maps.example/x Carver Community Center; https://zoom.us/j/1", { location: "Carver Community Center", isVirtual: true, label: "Carver Community Center" }],
+    ["a venue between two map links", "https://maps.example/x Carver Community Center; https://example.org/directions", { location: "Carver Community Center", isVirtual: false, label: "Carver Community Center" }],
+    // An email address is stripped like a link (every address here is invented).
+    ["a venue with a contact address", "Carver Community Center, questions to a.resident@example.org", { location: "Carver Community Center, questions to", isVirtual: false, label: "Carver Community Center, questions to" }],
+    ["an address in parentheses", "Room 2 (a.resident@example.org)", { location: "Room 2", isVirtual: false, label: "Room 2" }],
+    ["a mailto link", "Room 2, mailto:a.resident@example.org", { location: "Room 2", isVirtual: false, label: "Room 2" }],
+    ["only an address", "x.y@gmail.com", { location: undefined, isVirtual: true, label: "Virtual meeting" }],
+    ["an address and a join link", "Room 2 a.resident@example.org https://zoom.us/j/1", { location: "Room 2", isVirtual: true, label: "Room 2" }],
+    ["the bare text gmail.com", "Carver (list on gmail.com)", { location: "Carver (list on)", isVirtual: false, label: "Carver (list on)" }],
+    ["an asset-style name is not an address", "Room logo@2x.png", { location: "Room logo@2x.png", isVirtual: false, label: "Room logo@2x.png" }],
     ["whole words only: 'meeting' and 'zoomed' are not virtual terms", "Community Meeting Room, Zoomed-in Annex", { location: "Community Meeting Room, Zoomed-in Annex", isVirtual: false, label: "Community Meeting Room, Zoomed-in Annex" }],
   ])("%s", (_name, location, expected) => {
     const m = at(location);
     expect(m.location).toBe(expected.location);
     expect(m.isVirtual).toBe(expected.isVirtual);
     expect(placeLabel(m)).toBe(expected.label);
-    expect(JSON.stringify(m)).not.toMatch(/https?:|zoom\.us|meet\.google\.com|www\./);
+    expect(JSON.stringify(m)).not.toMatch(/https?:|zoom\.us|meet\.google\.com|tel\.meet|www\.|example\.org|gmail\.com|mailto/);
+    expect(addToGoogleCalendarUrl(m)).not.toMatch(/zoom\.us|meet\.google\.com|example\.org|gmail\.com/);
   });
 
   it("placeLabel reads only the location text", () => {
@@ -386,5 +402,49 @@ describe("location, isVirtual, and placeLabel", () => {
     expect(placeLabel({ ...base, isVirtual: true, location: "Meet" })).toBe("Virtual meeting");
     expect(placeLabel({ ...base, isVirtual: false, location: "Library" })).toBe("Library");
     expect(placeLabel({ ...base, isVirtual: true, location: "Virtual meeting room 3" })).toBe("Virtual meeting room 3");
+  });
+});
+
+describe("an email address in a location is removed and noted, never printed or logged", () => {
+  const noteNow = new Date("2026-10-06T18:00:00Z");
+  const withLocation = (uid: string, start: string, end: string, location: string, ...extra: string[]) =>
+    vevent(uid, `DTSTART:${start}`, `DTEND:${end}`, `LOCATION:${location.replace(/,/g, "\\,")}`, ...extra);
+
+  it("notes each affected event once, by the date of its next meeting, without the address or the location", () => {
+    const body = wrap(
+      withLocation("one-off", "20261020T230000Z", "20261021T003000Z", "Carver Community Center, ask a.resident@example.org"),
+      withLocation("clean", "20261117T000000Z", "20261117T013000Z", "Carver Community Center"),
+      // A monthly series: many meetings, one event, one note (for the first meeting that has not ended).
+      withLocation("series", "20260915T230000Z", "20260916T003000Z", "Room 2 b.neighbor@example.org", "RRULE:FREQ=MONTHLY;COUNT=6"),
+    );
+    const { meetings, notes } = parseCalendar(body, noteNow);
+    expect(meetings.length).toBeGreaterThan(6);
+    expect(notes).toEqual([
+      "an email address was removed from the location of the meeting on 2026-10-15",
+      "an email address was removed from the location of the meeting on 2026-10-20",
+    ]);
+    const everything = JSON.stringify({ meetings, notes });
+    for (const leak of ["a.resident", "b.neighbor", "example.org", "@"]) expect(everything, leak).not.toContain(leak);
+    expect(notes.join(" ")).not.toMatch(/Carver|Room 2/);
+    expect(parseIcs(body, noteNow)).toEqual(meetings);
+  });
+
+  it("says nothing for an event whose meetings have all ended (their locations are not printed), or with nothing removed", () => {
+    const body = wrap(
+      withLocation("past", "20260915T230000Z", "20260916T003000Z", "Room 2 a.resident@example.org"),
+      withLocation("clean", "20261020T230000Z", "20261021T003000Z", "Room 2, https://zoom.us/j/1"),
+    );
+    const { meetings, notes } = parseCalendar(body, noteNow);
+    expect(notes).toEqual([]);
+    expect(meetings.map((m) => m.location)).toEqual(["Room 2", "Room 2"]);
+  });
+
+  it("loadCalendar hands the notes on", async () => {
+    vi.stubEnv("OFFLINE", "");
+    const body = wrap(withLocation("one-off", "20261020T230000Z", "20261021T003000Z", "Carver, a.resident@example.org"));
+    const r = await loadCalendar(settings, noteNow, async () => new Response(body, { status: 200 }));
+    expect(r).toMatchObject({ ok: true, notes: ["an email address was removed from the location of the meeting on 2026-10-20"] });
+    const clean = await loadCalendar(settings, noteNow, async () => new Response(ics, { status: 200 }));
+    expect(clean.ok && clean.notes).toEqual([]);
   });
 });

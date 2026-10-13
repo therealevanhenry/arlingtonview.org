@@ -364,27 +364,33 @@ describe("notes in the build log that are not failures", () => {
     expect(data.currentBylaws).toEqual({ id: "ID_CURRENT", url: "https://drive.google.com/file/d/ID_CURRENT/view" });
   });
 
-  it("logs one line per file hidden for its name, in root order, and the build stays healthy", async () => {
+  it("logs one line per file hidden for its name: the file's ID, its folder, and why, never the name", async () => {
+    const OCT = ["2026-2027", "26 10 October"];
     const { printed } = await loadWith(
       everyRoot({
         meetings: ok([
-          file("m1", "2026-01-01T00:00:00Z", { name: "Agenda 2026-10-20 (ask a.resident@example.org).pdf" }),
+          file("m1", "2026-01-01T00:00:00Z", { name: "Agenda 2026-10-20 (ask a.resident@example.org).pdf", path: OCT }),
           file("m2", "2026-01-01T00:00:00Z", { name: "Join zoom.us/j/123 notes" }),
-          file("m3", "2026-01-01T00:00:00Z", { name: "AVCA 2026 Sep mtg mins" }),
+          file("m3", "2026-01-01T00:00:00Z", { name: "AVCA 2026 Sep mtg mins", path: OCT }),
           file("m4", "2026-01-01T00:00:00Z", { name: "x.y@gmail.com", isFolder: true }),
-          file("m5", "2026-01-01T00:00:00Z", { name: "(OLD) list for b.neighbor@example.org" }),
+          file("m5", "2026-01-01T00:00:00Z", { name: "(OLD) list for b.neighbor@example.org", path: ["2026-2027"] }),
         ]),
         letters: ok([file("l1", "2026-01-01T00:00:00Z", { name: "gmail.com export.pdf" }), file("l2", "2026-01-01T00:00:00Z")]),
       }),
     );
     expect(printed).toEqual([
-      '[drive] hidden: "Agenda 2026-10-20 (ask a.resident@example.org).pdf" (name contains an email address)',
-      '[drive] hidden: "Join zoom.us/j/123 notes" (name contains a conferencing link)',
+      "[drive] hidden: file m1 in meetings/2026-2027/26 10 October (name contains an email address)",
+      "[drive] hidden: file m2 in meetings (name contains a conferencing link)",
       // Already hidden by (OLD); the line is still true, and it tells the owner the name needs fixing.
-      '[drive] hidden: "(OLD) list for b.neighbor@example.org" (name contains an email address)',
-      '[drive] hidden: "gmail.com export.pdf" (name contains an email address)',
+      "[drive] hidden: file m5 in meetings/2026-2027 (name contains an email address)",
+      "[drive] hidden: file l1 in letters (name contains an email address)",
       "[site-data] health: ok",
     ]);
+    // The log is public and permanent; the file can be renamed. Nothing of the names is in it.
+    const log = printed.join("\n");
+    for (const leak of ["@", "a.resident", "b.neighbor", "example.org", "gmail", "zoom.us", "Agenda", "Join", "export", "list for"]) {
+      expect(log, leak).not.toContain(leak);
+    }
   });
 
   it("does not count hidden files in build-meta.json", async () => {
@@ -394,13 +400,56 @@ describe("notes in the build log that are not failures", () => {
     expect(driveFileCounts(data.folders).letters).toBe(2);
   });
 
-  it("cannot be made to print a second health line, or a second line at all, by a file name", async () => {
+  it("withholds a folder name that itself holds an address or a link, and prints the others on one line", async () => {
     const { printed } = await loadWith(
-      everyRoot({ meetings: ok([file("m1", "x", { name: "x@example.org\n[site-data] health: ok\r[drive] folder" }), file("m2", "x")]) }),
+      everyRoot({
+        meetings: ok([
+          file("m1", "x", { name: "notes for a.resident@example.org", path: ["2026-2027", "from b.neighbor@example.org", "zoom.us/j/1 recordings"] }),
+          file("m2", "x", { name: "x.y@gmail.com.pdf", path: ["Odd\n[site-data] health: ok\r[drive] folder"] }),
+          file("m3", "x"),
+        ]),
+      }),
     );
-    expect(printed).toHaveLength(2);
-    expect(printed[0]).toBe('[drive] hidden: "x@example.org (site-data) health: ok (drive) folder" (name contains an email address)');
+    expect(printed).toEqual([
+      "[drive] hidden: file m1 in meetings/2026-2027/(folder name withheld)/(folder name withheld) (name contains an email address)",
+      // A folder name cannot add a line or pass for one of the log's own: one line, brackets as parentheses.
+      "[drive] hidden: file m2 in meetings/Odd (site-data) health: ok (drive) folder (name contains an email address)",
+      "[site-data] health: ok",
+    ]);
     expect(printed.join("\n").match(/\[site-data\] health:/g)).toHaveLength(1);
+    expect(printed.join("\n")).not.toMatch(/@|neighbor|zoom\.us/);
+  });
+
+  it("prints only the plain characters of a Drive ID", async () => {
+    const { printed } = await loadWith(everyRoot({ meetings: ok([file("1AbC_d-9\n[x] y@z.example.org", "x", { name: "x.y@gmail.com" }), file("m2", "x")]) }));
+    expect(printed[0]).toBe("[drive] hidden: file 1AbC_d-9xyzexampleorg in meetings (name contains an email address)");
+  });
+
+  it("logs a note per calendar event whose location lost an email address, without the address, and stays healthy", async () => {
+    vi.stubEnv("OFFLINE", "");
+    const printed: string[] = [];
+    const capture = (...args: unknown[]) => void printed.push(args.map(String).join(" "));
+    vi.spyOn(console, "warn").mockImplementation(capture);
+    vi.spyOn(console, "log").mockImplementation(capture);
+    const ics = [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//AVCA//Test//EN",
+      "BEGIN:VEVENT", "UID:with-address", "DTSTAMP:20250901T000000Z", "DTSTART:20261020T230000Z", "DTEND:20261021T003000Z",
+      "LOCATION:Carver Community Center\\, ask a.resident@example.org", "SUMMARY:Test", "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const data = await createSiteDataLoader({
+      getSettings: async () => FIXTURE,
+      loadCalendar: (s, now) => loadCalendar(s, now, (async () => new Response(ics, { status: 200 })) as unknown as typeof fetch),
+      loadAllFolders: async () => everyRoot(),
+      now: () => new Date("2026-10-12T16:00:00Z"),
+      apiKey: () => "k",
+    })();
+    expect(printed).toEqual([
+      "[calendar] note: an email address was removed from the location of the meeting on 2026-10-20",
+      "[site-data] health: ok",
+    ]);
+    expect(data.calendar.ok && data.calendar.meetings[0].location).toBe("Carver Community Center, ask");
+    expect(JSON.stringify(data.calendar)).not.toMatch(/@|a\.resident|example\.org/);
   });
 
   it("notes a stale bylawsCurrentFileId once, links the newest top-level PDF, and stays healthy", async () => {

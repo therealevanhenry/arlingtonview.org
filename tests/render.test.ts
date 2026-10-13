@@ -298,6 +298,32 @@ describe("NextMeeting", () => {
     expect(html.slice(details)).toContain(`mailto:${settings.contactEmail}`);
   });
 
+  it("shows the room AND the note when the location held a join link (parsed, then rendered)", async () => {
+    const { parseIcs } = await import("../src/lib/calendar");
+    const event = (location: string) =>
+      ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//AVCA//Test//EN", "BEGIN:VEVENT", "UID:u", "DTSTAMP:20250901T000000Z", "DTSTART:20260929T230000Z", "DTEND:20260930T003000Z", `LOCATION:${location}`, "SUMMARY:Test", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+    const render = async (location: string) => {
+      const [meeting] = parseIcs(event(location), new Date("2026-09-01T12:00:00Z"));
+      return container.renderToString(NextMeeting, { props: { meeting, settings } });
+    };
+    const room = await render("Room 2\\, https://zoom.us/j/123");
+    expect(room).toContain('<p class="notice-place">Room 2</p>');
+    expect(room).toContain(settings.virtualLinkNote);
+    expect(room).not.toContain("zoom.us");
+    const map = await render("1415 S Queen St https://maps.example/x");
+    expect(map).toContain('<p class="notice-place">1415 S Queen St</p>');
+    expect(map).not.toContain(settings.virtualLinkNote);
+    expect(map).not.toContain("maps.example");
+    const bare = await render("https://meet.google.com/abc-defg-hij");
+    expect(bare).toContain('<p class="notice-place">Virtual meeting</p>');
+    expect(bare).toContain(settings.virtualLinkNote);
+    expect(bare).not.toContain("meet.google.com");
+    const address = await render("Room 2 (a.resident@example.org)");
+    expect(address).toContain('<p class="notice-place">Room 2</p>');
+    expect(address).not.toContain("a.resident");
+    expect(address).not.toContain(settings.virtualLinkNote);
+  });
+
   it("prints Virtual meeting for a location that is only a virtual term", async () => {
     for (const location of ["Virtual", "Google Meet", "Zoom meeting", "online"]) {
       const html = await container.renderToString(NextMeeting, { props: { meeting: { ...sample, isVirtual: true, location }, settings } });

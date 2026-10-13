@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conferencingHits, emailAddresses, privateNameReason } from "../src/lib/privacy";
+import { conferencingHits, emailAddresses, privateNameReason, withoutEmailAddresses } from "../src/lib/privacy";
 
 describe("privateNameReason (Drive file names that are never listed)", () => {
   it.each([
@@ -48,5 +48,26 @@ describe("emailAddresses and conferencingHits", () => {
 
   it("an address at a domain that only looks like a density suffix is still an address", () => {
     expect(emailAddresses("name@2x.example.org")).toEqual(["name@2x.example.org"]);
+  });
+});
+
+describe("withoutEmailAddresses", () => {
+  it("removes every address (and a mailto: before it, and the bare text gmail.com) and counts them", () => {
+    expect(withoutEmailAddresses("Room 2, a.resident@example.org or mailto:b.neighbor@example.org.")).toEqual({ text: "Room 2,  or .", removed: 2 });
+    expect(withoutEmailAddresses("list on gmail.com, or X.Y@GMAIL.COM")).toEqual({ text: "list on , or ", removed: 2 });
+  });
+
+  it("leaves text without an address alone, including an asset name with a density suffix", () => {
+    for (const text of ["Carver Community Center", "Room logo@2x.png", "Meet @ 7 pm", ""]) {
+      expect(withoutEmailAddresses(text)).toEqual({ text, removed: 0 });
+    }
+  });
+
+  it("leaves nothing the build's address check would catch", () => {
+    for (const text of ["a@b.example.org", "x.y@gmail.com, gmail.com", "o'neighbor@example.org (A.Resident+avca@Example.ORG)"]) {
+      const { text: out } = withoutEmailAddresses(text);
+      expect(emailAddresses(out), text).toEqual([]);
+      expect(out, text).not.toMatch(/gmail\.com/i);
+    }
   });
 });
