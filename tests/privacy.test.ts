@@ -7,7 +7,7 @@ describe("privateNameReason (Drive file names that are never listed)", () => {
     "Minutes 2026-10-20 (questions to A.Resident+avca@Example.ORG)",
     "o'neighbor@example.org notes",
     "board list gmail.com export",
-    "CONTACT US AT SOMEONE@GMAIL.COM",
+    "CONTACT US AT X.Y@GMAIL.COM",
   ])("hides a name with an email address: %s", (name) => {
     expect(privateNameReason(name)).toBe("name contains an email address");
   });
@@ -39,7 +39,7 @@ describe("privateNameReason (Drive file names that are never listed)", () => {
 
 describe("emailAddresses and conferencingHits", () => {
   it("return every match, and nothing for clean text", () => {
-    expect(emailAddresses("a@b.org, then c.d@e.example.com")).toEqual(["a@b.org", "c.d@e.example.com"]);
+    expect(emailAddresses("a@b.example.org, then c.d@e.example.com")).toEqual(["a@b.example.org", "c.d@e.example.com"]);
     expect(emailAddresses("logo@2x.png and nothing else")).toEqual([]);
     expect(emailAddresses("not@anaddress")).toEqual([]);
     expect(conferencingHits("zoom.us and MEET.GOOGLE.COM")).toEqual(["zoom.us", "MEET.GOOGLE.COM"]);

@@ -549,7 +549,7 @@ describe("names hidden by rule (an email address or a conferencing link in the n
   it("buildArchive never uses one as an agenda, minutes, or a material, and never makes a row from one", () => {
     const hiddenAgenda = withEmail();
     const hiddenMaterial = withLink();
-    const hiddenMins = file("AVCA 2026 Oct mtg mins sent from someone@gmail.com", ["2026-2027", "26 11 November"]);
+    const hiddenMins = file("AVCA 2026 Oct mtg mins sent from x.y@gmail.com", ["2026-2027", "26 11 November"]);
     const lonely = file("AVCA Proposed Agenda 01.15.2020 call meet.google.com/abc-defg-hij");
     const rows = buildArchive([meeting("2026-10-20")], { meetings: ok([hiddenAgenda, hiddenMaterial, hiddenMins, lonely]), presentations: ok([withLink()]) });
     expect(dates(rows)).toEqual(["2026-10-20"]);

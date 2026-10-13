@@ -42,6 +42,7 @@ describe("conferencingLinks (build assertion 4)", () => {
   });
 });
 
+// Every address here is invented: example.org is reserved, and x.y is too short to be a Gmail account.
 describe("emailLeaks (build assertion 5)", () => {
   it.each([
     ["an address in link text", '<a href="/join/">a.resident@example.org</a>', ["a.resident@example.org"]],
@@ -50,7 +51,7 @@ describe("emailLeaks (build assertion 5)", () => {
     ["an address in plain text", "<p>Questions: A.Resident+avca@Example.ORG.</p>", ["A.Resident+avca@Example.ORG"]],
     ["an address with an apostrophe, as HTML escapes it", "<p>o&#39;neighbor@example.org</p>", ["o'neighbor@example.org"]],
     ["an address whose @ is written as a character reference", "<p>a.resident&#64;example.org and b.neighbor&#x40;example.org</p>", ["a.resident@example.org", "b.neighbor@example.org"]],
-    ["a gmail.com address (reported as gmail.com and as an address)", "<p>someone@gmail.com</p>", ["gmail.com", "someone@gmail.com"]],
+    ["a gmail.com address (reported as gmail.com and as an address)", "<p>x.y@gmail.com</p>", ["gmail.com", "x.y@gmail.com"]],
     ["the string gmail.com with no address around it", "<p>We moved off gmail.com last year.</p>", ["gmail.com"]],
     ["a second address beside the contact address", `<p>${CONTACT} or a.resident@example.org</p>`, ["a.resident@example.org"]],
     ["an address that only resembles the contact address", `<p>x${CONTACT}</p>`, [`x${CONTACT}`]],

@@ -371,7 +371,7 @@ describe("notes in the build log that are not failures", () => {
           file("m1", "2026-01-01T00:00:00Z", { name: "Agenda 2026-10-20 (ask a.resident@example.org).pdf" }),
           file("m2", "2026-01-01T00:00:00Z", { name: "Join zoom.us/j/123 notes" }),
           file("m3", "2026-01-01T00:00:00Z", { name: "AVCA 2026 Sep mtg mins" }),
-          file("m4", "2026-01-01T00:00:00Z", { name: "someone@gmail.com", isFolder: true }),
+          file("m4", "2026-01-01T00:00:00Z", { name: "x.y@gmail.com", isFolder: true }),
           file("m5", "2026-01-01T00:00:00Z", { name: "(OLD) list for b.neighbor@example.org" }),
         ]),
         letters: ok([file("l1", "2026-01-01T00:00:00Z", { name: "gmail.com export.pdf" }), file("l2", "2026-01-01T00:00:00Z")]),
